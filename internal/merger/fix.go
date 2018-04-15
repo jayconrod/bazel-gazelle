@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
+	"github.com/bazelbuild/bazel-gazelle/internal/rule"
 	bf "github.com/bazelbuild/buildtools/build"
 )
 
@@ -42,7 +43,7 @@ import (
 //
 // FixLoads should be called after this, since it will fix load statements that
 // may be broken by transformations applied by this function.
-func FixFile(c *config.Config, f *bf.File) {
+func FixFile(c *config.Config, f *rule.File) {
 	migrateLibraryEmbed(c, f)
 	migrateGrpcCompilers(c, f)
 	flattenSrcs(c, f)
@@ -54,41 +55,26 @@ func FixFile(c *config.Config, f *bf.File) {
 // migrateLibraryEmbed converts "library" attributes to "embed" attributes,
 // preserving comments. This only applies to Go rules, and only if there is
 // no keep comment on "library" and no existing "embed" attribute.
-func migrateLibraryEmbed(c *config.Config, f *bf.File) {
-	for _, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok || shouldKeep(stmt) {
+func migrateLibraryEmbed(c *config.Config, f *rule.File) {
+	for _, r := range f.Rules {
+		libExpr := r.Attr("library")
+		if libExpr == nil || r.ShouldKeep(libExpr) || r.Attr("embed") != nil {
 			continue
 		}
-		rule := bf.Rule{Call: call}
-		if !isGoRule(rule.Kind()) {
-			continue
-		}
-		libExpr := rule.Attr("library")
-		if libExpr == nil || shouldKeep(libExpr) || rule.Attr("embed") != nil {
-			continue
-		}
-		rule.DelAttr("library")
-		rule.SetAttr("embed", &bf.ListExpr{List: []bf.Expr{libExpr}})
+		r.DelAttr("library")
+		r.SetAttr("embed", &bf.ListExpr{List: []bf.Expr{libExpr}})
 	}
 }
 
 // migrateGrpcCompilers converts "go_grpc_library" rules into "go_proto_library"
 // rules with a "compilers" attribute.
-func migrateGrpcCompilers(c *config.Config, f *bf.File) {
-	for _, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok {
+func migrateGrpcCompilers(c *config.Config, f *rule.File) {
+	for _, r := range f.Rules {
+		if r.Kind() != "go_grpc_library" || r.ShouldKeep(stmt) || r.Attr("compilers") != nil {
 			continue
 		}
-		rule := bf.Rule{Call: call}
-		if rule.Kind() != "go_grpc_library" || shouldKeep(stmt) || rule.Attr("compilers") != nil {
-			continue
-		}
-		rule.SetKind("go_proto_library")
-		rule.SetAttr("compilers", &bf.ListExpr{
-			List: []bf.Expr{&bf.StringExpr{Value: config.GrpcCompilerLabel}},
-		})
+		r.SetKind("go_proto_library")
+		r.SetAttr("compilers", []string{config.GrpcCompilerLabel})
 	}
 }
 
@@ -99,36 +85,28 @@ func migrateGrpcCompilers(c *config.Config, f *bf.File) {
 // Note that the library attribute is disregarded, so cgo_library and
 // go_library attributes will be squashed even if the cgo_library was unlinked.
 // MergeFile will remove unused values and attributes later.
-func squashCgoLibrary(c *config.Config, f *bf.File) {
+func squashCgoLibrary(c *config.Config, f *rule.File) {
 	// Find the default cgo_library and go_library rules.
-	var cgoLibrary, goLibrary bf.Rule
-	cgoLibraryIndex := -1
-
-	for i, stmt := range f.Stmt {
-		c, ok := stmt.(*bf.CallExpr)
-		if !ok {
-			continue
-		}
-		r := bf.Rule{Call: c}
-		if r.Kind() == "cgo_library" && r.Name() == config.DefaultCgoLibName && !shouldKeep(c) {
-			if cgoLibrary.Call != nil {
+	var cgoLibrary, goLibrary *rule.Rule
+	for _, r := range f.Rules {
+		if r.Kind() == "cgo_library" && r.Name() == config.DefaultCgoLibName && !r.ShouldKeep() {
+			if cgoLibrary != nil {
 				log.Printf("%s: when fixing existing file, multiple cgo_library rules with default name found", f.Path)
 				continue
 			}
 			cgoLibrary = r
-			cgoLibraryIndex = i
 			continue
 		}
 		if r.Kind() == "go_library" && r.Name() == config.DefaultLibName {
-			if goLibrary.Call != nil {
+			if goLibrary != nil {
 				log.Printf("%s: when fixing existing file, multiple go_library rules with default name referencing cgo_library found", f.Path)
-				continue
 			}
 			goLibrary = r
+			continue
 		}
 	}
 
-	if cgoLibrary.Call == nil {
+	if cgoLibrary == nil {
 		return
 	}
 	if !c.ShouldFix {
@@ -136,71 +114,39 @@ func squashCgoLibrary(c *config.Config, f *bf.File) {
 		return
 	}
 
-	// Delete cgo_library.
-	f.Stmt = append(f.Stmt[:cgoLibraryIndex], f.Stmt[cgoLibraryIndex+1:]...)
-
-	// Copy the comments and attributes from cgo_library into go_library. If no
-	// go_library exists, create an empty one.
-	if goLibrary.Call != nil && shouldKeep(goLibrary.Call) {
+	if goLibrary == nil {
+		goLibrary = rule.NewRule(f, "go_library", config.DefaultLibName)
+	}
+	if err := rule.SquashRules(cgoLibrary, goLibrary, BuildAttrs); err != nil {
+		log.Print(err)
 		return
 	}
-	if goLibrary.Call == nil {
-		goLibrary.Call = &bf.CallExpr{}
-		goLibrary.SetKind("go_library")
-		goLibrary.SetAttr("name", &bf.StringExpr{Value: config.DefaultLibName})
-		if vis := cgoLibrary.Attr("visibility"); vis != nil {
-			goLibrary.SetAttr("visibility", vis)
-		}
-		f.Stmt = append(f.Stmt, goLibrary.Call)
-	}
-
-	goLibrary.DelAttr("embed")
-	goLibrary.SetAttr("cgo", &bf.LiteralExpr{Token: "True"})
-	goLibrary.Call.Comments.Before = append(goLibrary.Call.Comments.Before, cgoLibrary.Call.Comments.Before...)
-	goLibrary.Call.Comments.Suffix = append(goLibrary.Call.Comments.Suffix, cgoLibrary.Call.Comments.Suffix...)
-	goLibrary.Call.Comments.After = append(goLibrary.Call.Comments.After, cgoLibrary.Call.Comments.After...)
-	for _, key := range []string{"cdeps", "clinkopts", "copts", "data", "deps", "gc_goopts", "srcs"} {
-		goLibraryAttr := goLibrary.Attr(key)
-		cgoLibraryAttr := cgoLibrary.Attr(key)
-		if cgoLibraryAttr == nil {
-			continue
-		}
-		if fixedAttr, err := squashExpr(goLibraryAttr, cgoLibraryAttr); err == nil {
-			goLibrary.SetAttr(key, fixedAttr)
-		}
-	}
+	cgoLibrary.Delete()
 }
 
 // squashXtest removes go_test rules with the default external name and merges
 // their attributes with a go_test rule with the default internal name. If
 // no internal go_test rule exists, a new one will be created (effectively
 // renaming the old rule).
-func squashXtest(c *config.Config, f *bf.File) {
+func squashXtest(c *config.Config, f *rule.File) {
 	// Search for internal and external tests.
 	var itest, xtest bf.Rule
-	xtestIndex := -1
-	for i, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok {
+	for _, r := range f.Rules {
+		if r.Kind() != "go_test" {
 			continue
 		}
-		rule := bf.Rule{Call: call}
-		if rule.Kind() != "go_test" {
-			continue
-		}
-		if name := rule.Name(); name == config.DefaultTestName {
-			itest = rule
-		} else if name == config.DefaultXTestName {
-			xtest = rule
-			xtestIndex = i
+		if r.Name() == config.DefaultTestName {
+			itest = r
+		} else if r.Name() == config.DefaultXTestName {
+			xtest = r
 		}
 	}
 
-	if xtest.Call == nil || shouldKeep(xtest.Call) || (itest.Call != nil && shouldKeep(itest.Call)) {
+	if xtest == nil || xtest.ShouldKeep() || (itest != nil && itest.ShouldKeep()) {
 		return
 	}
 	if !c.ShouldFix {
-		if itest.Call == nil {
+		if itest == nil {
 			log.Printf("%s: go_default_xtest is no longer necessary. Run 'gazelle fix' to rename to go_default_test.", f.Path)
 		} else {
 			log.Printf("%s: go_default_xtest is no longer necessary. Run 'gazelle fix' to squash with go_default_test.", f.Path)
@@ -209,24 +155,17 @@ func squashXtest(c *config.Config, f *bf.File) {
 	}
 
 	// If there was no internal test, we can just rename the external test.
-	if itest.Call == nil {
-		xtest.SetAttr("name", &bf.StringExpr{Value: config.DefaultTestName})
+	if itest == nil {
+		xtest.SetName(config.DefaultTestName)
 		return
 	}
 
 	// Attempt to squash.
-	if err := squashRule(xtest.Call, itest.Call, f.Path); err != nil {
+	if err := rule.SquashRules(xtest, itest, BuildAttrs); err != nil {
 		log.Print(err)
 		return
 	}
-
-	// Delete the external test.
-	f.Stmt = append(f.Stmt[:xtestIndex], f.Stmt[xtestIndex+1:]...)
-
-	// Copy comments and attributes from external test to internal test.
-	itest.Call.Comments.Before = append(itest.Call.Comments.Before, xtest.Call.Comments.Before...)
-	itest.Call.Comments.Suffix = append(itest.Call.Comments.Suffix, xtest.Call.Comments.Suffix...)
-	itest.Call.Comments.After = append(itest.Call.Comments.After, xtest.Call.Comments.After...)
+	xtest.Delete()
 }
 
 // squashRule copies information in mergeable attributes from src into dst. This
@@ -268,7 +207,7 @@ func squashRule(src, dst *bf.CallExpr, filename string) error {
 }
 
 func squashExpr(src, dst bf.Expr) (bf.Expr, error) {
-	if shouldKeep(dst) {
+	if rule.ShouldKeep(dst) {
 		return dst, nil
 	}
 	if isScalar(dst) {
@@ -410,7 +349,7 @@ func squashDict(x, y *bf.DictExpr) (*bf.DictExpr, error) {
 // go_proto_library attributes which are no longer recognized. New rules
 // are generated in place of the deleted rules, but attributes and comments
 // are not migrated.
-func removeLegacyProto(c *config.Config, f *bf.File) {
+func removeLegacyProto(c *config.Config, f *rule.File) {
 	// Don't fix if the proto mode was set to something other than the default.
 	if c.ProtoMode != config.DefaultProtoMode {
 		return
@@ -470,7 +409,7 @@ func removeLegacyProto(c *config.Config, f *bf.File) {
 // extractPlatformStringsExprs for matching details) into a sorted,
 // de-duplicated list. Comments are accumulated and de-duplicated across
 // duplicate expressions.
-func flattenSrcs(c *config.Config, f *bf.File) {
+func flattenSrcs(c *config.Config, f *rule.File) {
 	for _, stmt := range f.Stmt {
 		call, ok := stmt.(*bf.CallExpr)
 		if !ok {
@@ -545,7 +484,7 @@ func flattenSrcsExpr(oldSrcs bf.Expr) bf.Expr {
 // FixLoads removes loads of unused go rules and adds loads of newly used rules.
 // This should be called after FixFile and MergeFile, since symbols
 // may be introduced that aren't loaded.
-func FixLoads(f *bf.File) {
+func FixLoads(f *rule.File) {
 	// Make a list of load statements in the file. Keep track of loads of known
 	// files, since these may be changed. Keep track of known symbols loaded from
 	// unknown files; we will not add loads for these.
@@ -834,7 +773,7 @@ func newLoadIndex(stmts []bf.Expr, after []string) int {
 
 // FixWorkspace updates rules in the WORKSPACE file f that were used with an
 // older version of rules_go or gazelle.
-func FixWorkspace(f *bf.File) {
+func FixWorkspace(f *rule.File) {
 	removeLegacyGoRepository(f)
 }
 
@@ -845,7 +784,7 @@ func FixWorkspace(f *bf.File) {
 //
 // This should be called after modifications have been made to WORKSPACE
 // (i.e., after FixLoads) before writing it to disk.
-func CheckGazelleLoaded(f *bf.File) error {
+func CheckGazelleLoaded(f *rule.File) error {
 	needGazelle := false
 	for _, stmt := range f.Stmt {
 		call, ok := stmt.(*bf.CallExpr)
@@ -893,7 +832,7 @@ by adding a comment like this to WORKSPACE:
 // removeLegacyGoRepository removes loads of go_repository from
 // @io_bazel_rules_go. FixLoads should be called after this; it will load from
 // @bazel_gazelle.
-func removeLegacyGoRepository(f *bf.File) {
+func removeLegacyGoRepository(f *rule.File) {
 	var deletedStmtIndices []int
 	for stmtIndex, stmt := range f.Stmt {
 		call, ok := stmt.(*bf.CallExpr)

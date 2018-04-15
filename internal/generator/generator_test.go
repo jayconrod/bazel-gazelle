@@ -26,7 +26,6 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/internal/label"
 	"github.com/bazelbuild/bazel-gazelle/internal/merger"
 	"github.com/bazelbuild/bazel-gazelle/internal/packages"
-	"github.com/bazelbuild/bazel-gazelle/internal/rule"
 	bf "github.com/bazelbuild/buildtools/build"
 )
 
