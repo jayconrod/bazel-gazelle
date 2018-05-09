@@ -58,7 +58,7 @@ func FixFile(c *config.Config, f *rule.File) {
 func migrateLibraryEmbed(c *config.Config, f *rule.File) {
 	for _, r := range f.Rules {
 		libExpr := r.Attr("library")
-		if libExpr == nil || r.ShouldKeep(libExpr) || r.Attr("embed") != nil {
+		if libExpr == nil || rule.ShouldKeep(libExpr) || r.Attr("embed") != nil {
 			continue
 		}
 		r.DelAttr("library")
@@ -70,7 +70,7 @@ func migrateLibraryEmbed(c *config.Config, f *rule.File) {
 // rules with a "compilers" attribute.
 func migrateGrpcCompilers(c *config.Config, f *rule.File) {
 	for _, r := range f.Rules {
-		if r.Kind() != "go_grpc_library" || r.ShouldKeep(stmt) || r.Attr("compilers") != nil {
+		if r.Kind() != "go_grpc_library" || r.ShouldKeep() || r.Attr("compilers") != nil {
 			continue
 		}
 		r.SetKind("go_proto_library")
@@ -115,9 +115,10 @@ func squashCgoLibrary(c *config.Config, f *rule.File) {
 	}
 
 	if goLibrary == nil {
-		goLibrary = rule.NewRule(f, "go_library", config.DefaultLibName)
+		goLibrary = rule.NewRule("go_library", config.DefaultLibName)
+		goLibrary.Insert(f)
 	}
-	if err := rule.SquashRules(cgoLibrary, goLibrary, BuildAttrs); err != nil {
+	if err := rule.SquashRules(cgoLibrary, goLibrary, BuildAttrs, f.Path); err != nil {
 		log.Print(err)
 		return
 	}
@@ -130,7 +131,7 @@ func squashCgoLibrary(c *config.Config, f *rule.File) {
 // renaming the old rule).
 func squashXtest(c *config.Config, f *rule.File) {
 	// Search for internal and external tests.
-	var itest, xtest bf.Rule
+	var itest, xtest *rule.Rule
 	for _, r := range f.Rules {
 		if r.Kind() != "go_test" {
 			continue
@@ -161,7 +162,7 @@ func squashXtest(c *config.Config, f *rule.File) {
 	}
 
 	// Attempt to squash.
-	if err := rule.SquashRules(xtest, itest, BuildAttrs); err != nil {
+	if err := rule.SquashRules(xtest, itest, BuildAttrs, f.Path); err != nil {
 		log.Print(err)
 		return
 	}
@@ -356,38 +357,22 @@ func removeLegacyProto(c *config.Config, f *rule.File) {
 	}
 
 	// Scan for definitions to delete.
-	var deletedIndices []int
-	var protoIndices []int
-	shouldDeleteProtos := false
-	for i, stmt := range f.Stmt {
-		c, ok := stmt.(*bf.CallExpr)
-		if !ok {
-			continue
-		}
-		x, ok := c.X.(*bf.LiteralExpr)
-		if !ok {
-			continue
-		}
-
-		if x.Token == "load" && len(c.List) > 0 {
-			if name, ok := c.List[0].(*bf.StringExpr); ok && name.Value == "@io_bazel_rules_go//proto:go_proto_library.bzl" {
-				deletedIndices = append(deletedIndices, i)
-				shouldDeleteProtos = true
-			}
-			continue
-		}
-		if x.Token == "filegroup" {
-			r := bf.Rule{Call: c}
-			if r.Name() == config.DefaultProtosName {
-				deletedIndices = append(deletedIndices, i)
-			}
-			continue
-		}
-		if x.Token == "go_proto_library" {
-			protoIndices = append(protoIndices, i)
+	var protoLoads []*rule.Load
+	for _, l := range f.Loads {
+		if l.Name() == "@io_bazel_rules_go//proto:go_proto_library.bzl" {
+			protoLoads = append(protoLoads, l)
 		}
 	}
-	if len(deletedIndices) == 0 {
+	var protoFilegroups, protoRules []*rule.Rule
+	for _, r := range f.Rules {
+		if r.Kind() == "filegroup" && r.Name() == config.DefaultProtosName {
+			protoFilegroups = append(protoFilegroups, r)
+		}
+		if r.Kind() == "go_proto_library" {
+			protoRules = append(protoRules, r)
+		}
+	}
+	if len(protoLoads)+len(protoFilegroups) == 0 {
 		return
 	}
 	if !c.ShouldFix {
@@ -395,13 +380,19 @@ func removeLegacyProto(c *config.Config, f *rule.File) {
 		return
 	}
 
-	// Rebuild the file without deleted statements. Only delete go_proto_library
+	// Delete legacy proto loads and filegroups. Only delete go_proto_library
 	// rules if we deleted a load.
-	if shouldDeleteProtos {
-		deletedIndices = append(deletedIndices, protoIndices...)
-		sort.Ints(deletedIndices)
+	for _, l := range protoLoads {
+		l.Delete()
 	}
-	f.Stmt = deleteIndices(f.Stmt, deletedIndices)
+	for _, r := range protoFilegroups {
+		r.Delete()
+	}
+	if len(protoLoads) > 0 {
+		for _, r := range protoRules {
+			r.Delete()
+		}
+	}
 }
 
 // flattenSrcs transforms srcs attributes structured as concatenations of
@@ -410,21 +401,16 @@ func removeLegacyProto(c *config.Config, f *rule.File) {
 // de-duplicated list. Comments are accumulated and de-duplicated across
 // duplicate expressions.
 func flattenSrcs(c *config.Config, f *rule.File) {
-	for _, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok {
+	for _, r := range f.Rules {
+		if !isGoRule(r.Kind()) {
 			continue
 		}
-		rule := bf.Rule{Call: call}
-		if !isGoRule(rule.Kind()) {
-			continue
-		}
-		oldSrcs := rule.Attr("srcs")
+		oldSrcs := r.Attr("srcs")
 		if oldSrcs == nil {
 			continue
 		}
 		flatSrcs := flattenSrcsExpr(oldSrcs)
-		rule.SetAttr("srcs", flatSrcs)
+		r.SetAttr("srcs", flatSrcs)
 	}
 }
 
@@ -485,66 +471,25 @@ func flattenSrcsExpr(oldSrcs bf.Expr) bf.Expr {
 // This should be called after FixFile and MergeFile, since symbols
 // may be introduced that aren't loaded.
 func FixLoads(f *rule.File) {
-	// Make a list of load statements in the file. Keep track of loads of known
-	// files, since these may be changed. Keep track of known symbols loaded from
-	// unknown files; we will not add loads for these.
-	type loadInfo struct {
-		index      int
-		file       string
-		old, fixed *bf.CallExpr
-	}
-	var loads []loadInfo
+	// Scan load statements in the file. Keep track of loads of known files,
+	// since these may be changed. Keep track of symbols loaded from unknown
+	// files; we will not add loads for these.
+	var loads []*rule.Load
 	otherLoadedKinds := make(map[string]bool)
-	for i, stmt := range f.Stmt {
-		c, ok := stmt.(*bf.CallExpr)
-		if !ok {
+	for _, l := range f.Loads {
+		if knownFiles[l.Name()] {
+			loads = append(loads, l)
 			continue
 		}
-		x, ok := c.X.(*bf.LiteralExpr)
-		if !ok || x.Token != "load" {
-			continue
-		}
-
-		if len(c.List) == 0 {
-			continue
-		}
-		label, ok := c.List[0].(*bf.StringExpr)
-		if !ok {
-			continue
-		}
-
-		if knownFiles[label.Value] {
-			loads = append(loads, loadInfo{index: i, file: label.Value, old: c})
-			continue
-		}
-		for _, arg := range c.List[1:] {
-			switch sym := arg.(type) {
-			case *bf.StringExpr:
-				otherLoadedKinds[sym.Value] = true
-			case *bf.BinaryExpr:
-				if sym.Op != "=" {
-					continue
-				}
-				if x, ok := sym.X.(*bf.LiteralExpr); ok {
-					otherLoadedKinds[x.Token] = true
-				}
-			}
+		for _, sym := range l.Symbols() {
+			otherLoadedKinds[sym] = true
 		}
 	}
 
 	// Make a map of all the symbols from known files used in this file.
 	usedKinds := make(map[string]map[string]bool)
-	for _, stmt := range f.Stmt {
-		c, ok := stmt.(*bf.CallExpr)
-		if !ok {
-			continue
-		}
-		x, ok := c.X.(*bf.LiteralExpr)
-		if !ok {
-			continue
-		}
-
-		kind := x.Token
+	for _, r := range f.Rules {
+		kind := r.Kind()
 		if file, ok := knownKinds[kind]; ok && !otherLoadedKinds[kind] {
 			if usedKinds[file] == nil {
 				usedKinds[file] = make(map[string]bool)
@@ -555,63 +500,30 @@ func FixLoads(f *rule.File) {
 
 	// Fix the load statements. The order is important, so we iterate over
 	// knownLoads instead of knownFiles.
-	changed := false
-	type newLoad struct {
-		index int
-		load  *bf.CallExpr
-	}
-	var newLoads []newLoad
-	for _, l := range knownLoads {
-		file := l.file
+	for _, known := range knownLoads {
+		file := known.file
 		first := true
-		for i, _ := range loads {
-			li := &loads[i]
-			if li.file != file {
+		for _, l := range loads {
+			if l.Name() != file {
 				continue
 			}
 			if first {
-				li.fixed = fixLoad(li.old, file, usedKinds[file])
+				fixLoad(l, file, usedKinds[file])
 				first = false
 			} else {
-				li.fixed = fixLoad(li.old, file, nil)
+				fixLoad(l, file, nil)
 			}
-			changed = changed || li.fixed != li.old
+			if l.IsEmpty() {
+				l.Delete()
+			}
 		}
 		if first {
 			load := fixLoad(nil, file, usedKinds[file])
 			if load != nil {
-				index := newLoadIndex(f.Stmt, l.after)
-				newLoads = append(newLoads, newLoad{index, load})
-				changed = true
+				index := newLoadIndex(f, known.after)
+				load.Insert(f, index)
 			}
 		}
-	}
-	if !changed {
-		return
-	}
-	sort.Slice(newLoads, func(i, j int) bool {
-		return newLoads[i].index < newLoads[j].index
-	})
-
-	// Rebuild the file. Insert new loads at appropriate indices, replace fixed
-	// loads, and drop deleted loads.
-	oldStmt := f.Stmt
-	f.Stmt = make([]bf.Expr, 0, len(oldStmt)+len(newLoads))
-	newLoadIndex := 0
-	loadIndex := 0
-	for i, stmt := range oldStmt {
-		for newLoadIndex < len(newLoads) && i == newLoads[newLoadIndex].index {
-			f.Stmt = append(f.Stmt, newLoads[newLoadIndex].load)
-			newLoadIndex++
-		}
-		if loadIndex < len(loads) && i == loads[loadIndex].index {
-			if loads[loadIndex].fixed != nil {
-				f.Stmt = append(f.Stmt, loads[loadIndex].fixed)
-			}
-			loadIndex++
-			continue
-		}
-		f.Stmt = append(f.Stmt, stmt)
 	}
 }
 
@@ -681,90 +593,42 @@ func init() {
 	}
 }
 
-// fixLoad updates a load statement. load must be a load statement for
-// the Go rules or nil. If nil, a new statement may be created. Symbols in
-// kinds are added if they are not already present, symbols in knownKinds
-// are removed if they are not in kinds, and other symbols and arguments
-// are preserved. nil is returned if the statement should be deleted because
-// it is empty.
-func fixLoad(load *bf.CallExpr, file string, kinds map[string]bool) *bf.CallExpr {
-	var fixed bf.CallExpr
+// fixLoad updates a load statement with the given symbols. If load is nil,
+// a new load may be created and returned. Symbols in kinds will be added
+// to the load if they're not already present. Known symbols not in kinds
+// will be removed if present. Other symbols will be preserved. If load is
+// empty, nil is returned.
+func fixLoad(load *rule.Load, file string, kinds map[string]bool) *rule.Load {
 	if load == nil {
-		fixed = bf.CallExpr{
-			X: &bf.LiteralExpr{Token: "load"},
-			List: []bf.Expr{
-				&bf.StringExpr{Value: file},
-			},
-			ForceCompact: true,
-		}
-	} else {
-		fixed = *load
-	}
-
-	var symbols []*bf.StringExpr
-	var otherArgs []bf.Expr
-	loadedKinds := make(map[string]bool)
-	var added, removed int
-	for _, arg := range fixed.List[1:] {
-		if s, ok := arg.(*bf.StringExpr); ok {
-			if knownKinds[s.Value] == "" || kinds != nil && kinds[s.Value] {
-				symbols = append(symbols, s)
-				loadedKinds[s.Value] = true
-			} else {
-				removed++
-			}
-		} else {
-			otherArgs = append(otherArgs, arg)
-		}
-	}
-	if kinds != nil {
-		for kind, _ := range kinds {
-			if _, ok := loadedKinds[kind]; !ok {
-				symbols = append(symbols, &bf.StringExpr{Value: kind})
-				added++
-			}
-		}
-	}
-	if added == 0 && removed == 0 {
-		if load != nil && len(load.List) == 1 {
-			// Special case: delete existing empty load.
+		if len(kinds) == 0 {
 			return nil
 		}
-		return load
+		load = rule.NewLoad(file)
 	}
 
-	sort.Stable(byString(symbols))
-	fixed.List = fixed.List[:1]
-	for _, sym := range symbols {
-		fixed.List = append(fixed.List, sym)
+	for k := range kinds {
+		load.Add(k)
 	}
-	fixed.List = append(fixed.List, otherArgs...)
-	if len(fixed.List) == 1 {
-		return nil
+	for _, k := range load.Symbols() {
+		if knownKinds[k] != "" && !kinds[k] {
+			load.Remove(k)
+		}
 	}
-	return &fixed
+	return load
 }
 
 // newLoadIndex returns the index in stmts where a new load statement should
 // be inserted. after is a list of function names that the load should not
 // be inserted before.
-func newLoadIndex(stmts []bf.Expr, after []string) int {
+func newLoadIndex(f *rule.File, after []string) int {
 	if len(after) == 0 {
 		return 0
 	}
 	index := 0
-	for i, stmt := range stmts {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok {
-			continue
-		}
-		x, ok := call.X.(*bf.LiteralExpr)
-		if !ok {
-			continue
-		}
+	for _, r := range f.Rules {
 		for _, a := range after {
-			if x.Token == a {
-				index = i + 1
+			if r.Kind() == a && r.Index() >= index {
+				index = r.Index() + 1
 			}
 		}
 	}
@@ -786,33 +650,20 @@ func FixWorkspace(f *rule.File) {
 // (i.e., after FixLoads) before writing it to disk.
 func CheckGazelleLoaded(f *rule.File) error {
 	needGazelle := false
-	for _, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok {
-			continue
-		}
-		x, ok := call.X.(*bf.LiteralExpr)
-		if !ok {
-			continue
-		}
-		if x.Token == "load" {
-			if len(call.List) == 0 {
-				continue
-			}
-			if s, ok := call.List[0].(*bf.StringExpr); ok && strings.HasPrefix(s.Value, "@bazel_gazelle//") {
-				needGazelle = true
-			}
-			continue
-		}
-		rule := bf.Rule{Call: call}
-		if rule.Name() == "bazel_gazelle" {
-			return nil
+	for _, l := range f.Loads {
+		if strings.HasPrefix(l.Name(), "@bazel_gazelle//") {
+			needGazelle = true
 		}
 	}
 	if !needGazelle {
 		return nil
 	}
-	for _, d := range config.ParseDirectives(f) {
+	for _, r := range f.Rules {
+		if r.Name() == "bazel_gazelle" {
+			return nil
+		}
+	}
+	for _, d := range f.Directives {
 		if d.Key != "repo" {
 			continue
 		}
@@ -833,35 +684,14 @@ by adding a comment like this to WORKSPACE:
 // @io_bazel_rules_go. FixLoads should be called after this; it will load from
 // @bazel_gazelle.
 func removeLegacyGoRepository(f *rule.File) {
-	var deletedStmtIndices []int
-	for stmtIndex, stmt := range f.Stmt {
-		call, ok := stmt.(*bf.CallExpr)
-		if !ok || len(call.List) < 1 {
-			continue
-		}
-		if x, ok := call.X.(*bf.LiteralExpr); !ok || x.Token != "load" {
-			continue
-		}
-		if path, ok := call.List[0].(*bf.StringExpr); !ok || path.Value != "@io_bazel_rules_go//go:def.bzl" {
-			continue
-		}
-		var deletedArgIndices []int
-		for argIndex, arg := range call.List {
-			str, ok := arg.(*bf.StringExpr)
-			if !ok {
-				continue
+	for _, l := range f.Loads {
+		if l.Name() == "@io_bazel_rules_go//go:def.bzl" {
+			l.Remove("go_repository")
+			if l.IsEmpty() {
+				l.Delete()
 			}
-			if str.Value == "go_repository" {
-				deletedArgIndices = append(deletedArgIndices, argIndex)
-			}
-		}
-		if len(call.List)-len(deletedArgIndices) == 1 {
-			deletedStmtIndices = append(deletedStmtIndices, stmtIndex)
-		} else {
-			call.List = deleteIndices(call.List, deletedArgIndices)
 		}
 	}
-	f.Stmt = deleteIndices(f.Stmt, deletedStmtIndices)
 }
 
 // listSquasher builds a sorted, deduplicated list of string expressions. If

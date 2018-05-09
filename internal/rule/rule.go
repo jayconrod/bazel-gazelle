@@ -19,15 +19,17 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bazelbuild/bazel-gazelle/internal/config"
 	bzl "github.com/bazelbuild/buildtools/build"
 	bt "github.com/bazelbuild/buildtools/tables"
 )
 
 type File struct {
-	File  *bzl.File
-	Path  string
-	Loads []*Load
-	Rules []*Rule
+	File       *bzl.File
+	Path       string
+	Directives []config.Directive
+	Loads      []*Load
+	Rules      []*Rule
 }
 
 func EmptyFile(path string) *File {
@@ -37,7 +39,7 @@ func EmptyFile(path string) *File {
 	}
 }
 
-func NewFile(bzlFile *bzl.File) *File {
+func LoadFile(bzlFile *bzl.File) *File {
 	f := &File{
 		File: bzlFile,
 		Path: bzlFile.Path,
@@ -57,29 +59,32 @@ func NewFile(bzlFile *bzl.File) *File {
 			f.Rules = append(f.Rules, ruleFromExpr(i, call))
 		}
 	}
+	f.Directives = config.ParseDirectives(bzlFile)
 	return f
 }
 
 func (f *File) Sync() {
 	var inserts, deletes []stmt
-	categorize := func(s stmt) {
+	collect := func(s stmt) {
 		if s.shouldSync() {
 			s.sync()
 		}
-		if s.shouldInsert() {
-			inserts = append(inserts, s)
-		} else if s.shouldDelete() {
+		if s.shouldDelete() {
 			deletes = append(deletes, s)
+		}
+		if s.shouldInsert() {
+			s.sync()
+			inserts = append(inserts, s)
 		}
 	}
 	for _, s := range f.Loads {
-		categorize(s)
+		collect(s)
 	}
 	for _, s := range f.Rules {
-		categorize(s)
+		collect(s)
 	}
-	sort.Stable(byIndex(inserts))
 	sort.Stable(byIndex(deletes))
+	sort.Stable(byIndex(inserts))
 
 	oldStmt := f.File.Stmt
 	f.File.Stmt = make([]bzl.Expr, 0, len(oldStmt)-len(deletes)+len(inserts))
@@ -130,6 +135,7 @@ type baseStmt struct {
 }
 
 func (s *baseStmt) Index() int         { return s.index }
+func (s *baseStmt) Delete()            { s.deleted = true }
 func (s *baseStmt) shouldDelete() bool { return s.deleted }
 func (s *baseStmt) shouldInsert() bool { return s.inserted }
 func (s *baseStmt) shouldSync() bool   { return s.updated }
@@ -139,6 +145,19 @@ type Load struct {
 	baseStmt
 	name    string
 	symbols map[string]bzl.Expr
+}
+
+func NewLoad(name string) *Load {
+	return &Load{
+		baseStmt: baseStmt{
+			call: &bzl.CallExpr{
+				X:    &bzl.LiteralExpr{Token: "load"},
+				List: []bzl.Expr{&bzl.StringExpr{Value: name}},
+			},
+		},
+		name:    name,
+		symbols: make(map[string]bzl.Expr),
+	}
 }
 
 func loadFromExpr(index int, call *bzl.CallExpr) *Load {
@@ -176,6 +195,36 @@ func loadFromExpr(index int, call *bzl.CallExpr) *Load {
 
 func (l *Load) Name() string {
 	return l.name
+}
+
+func (l *Load) Symbols() []string {
+	syms := make([]string, 0, len(l.symbols))
+	for sym := range l.symbols {
+		syms = append(syms, sym)
+	}
+	return syms
+}
+
+func (l *Load) Add(sym string) {
+	if _, ok := l.symbols[sym]; !ok {
+		l.symbols[sym] = &bzl.StringExpr{Value: sym}
+		l.updated = true
+	}
+}
+
+func (l *Load) Remove(sym string) {
+	delete(l.symbols, sym)
+	l.updated = true
+}
+
+func (l *Load) IsEmpty() bool {
+	return len(l.symbols) == 0
+}
+
+func (l *Load) Insert(f *File, index int) {
+	l.index = index
+	l.inserted = true
+	f.Loads = append(f.Loads, l)
 }
 
 func (l *Load) sync() {
@@ -328,6 +377,24 @@ func (r *Rule) AttrString(key string) string {
 	return str.Value
 }
 
+func (r *Rule) AttrStrings(key string) []string {
+	attr, ok := r.attrs[key]
+	if !ok {
+		return nil
+	}
+	list, ok := attr.Y.(*bzl.ListExpr)
+	if !ok {
+		return nil
+	}
+	strs := make([]string, 0, len(list.List))
+	for _, e := range list.List {
+		if str, ok := e.(*bzl.StringExpr); ok {
+			strs = append(strs, str.Value)
+		}
+	}
+	return strs
+}
+
 func (r *Rule) DelAttr(key string) {
 	delete(r.attrs, key)
 	r.updated = true
@@ -361,15 +428,11 @@ func (r *Rule) SortLabels(attrs MergeableAttrs) {
 	}
 }
 
-func (r *Rule) Delete() {
-	r.deleted = true
-}
-
 func (r *Rule) Insert(f *File) {
-	// TODO(jayconrod): should rules always be inserted at the end? Should there be some
-	// sort order?
+	// TODO(jayconrod): should rules always be inserted at the end? Should there
+	// be some sort order?
+	r.index = len(f.File.Stmt)
 	r.inserted = true
-	r.index = len(f.Rules)
 	f.Rules = append(f.Rules, r)
 }
 
@@ -387,9 +450,16 @@ func (r *Rule) IsEmpty(attrs MergeableAttrs) bool {
 }
 
 func (r *Rule) sync() {
-	if !r.updated && !r.inserted {
+	if !r.updated {
 		return
 	}
+
+	for _, k := range []string{"srcs", "deps"} {
+		if attr, ok := r.attrs[k]; ok {
+			bzl.Walk(attr.Y, sortExprLabels)
+		}
+	}
+
 	call := r.call
 	call.X.(*bzl.LiteralExpr).Token = r.kind
 
@@ -412,6 +482,7 @@ func (r *Rule) sync() {
 	})
 
 	r.call.List = list
+	r.updated = false
 }
 
 func ShouldKeep(e bzl.Expr) bool {

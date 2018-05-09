@@ -26,7 +26,8 @@ import (
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/pathtools"
-	bf "github.com/bazelbuild/buildtools/build"
+	"github.com/bazelbuild/bazel-gazelle/internal/rule"
+	bzl "github.com/bazelbuild/buildtools/build"
 )
 
 // A WalkFunc is a callback called by Walk in each visited directory.
@@ -48,7 +49,7 @@ import (
 // was no file.
 //
 // isUpdateDir is true for directories that Gazelle was asked to update.
-type WalkFunc func(dir, rel string, c *config.Config, pkg *Package, oldFile *bf.File, isUpdateDir bool)
+type WalkFunc func(dir, rel string, c *config.Config, pkg *Package, oldFile *rule.File, isUpdateDir bool)
 
 // Walk traverses a directory tree. In each directory, Walk parses existing
 // build files. In directories that Gazelle was asked to update (c.Dirs), Walk
@@ -101,7 +102,7 @@ func Walk(c *config.Config, root string, f WalkFunc) {
 		}
 
 		// Look for an existing BUILD file.
-		var oldFile *bf.File
+		var oldFile *rule.File
 		haveError := false
 		for _, base := range c.ValidBuildFileNames {
 			oldPath := filepath.Join(dir, base)
@@ -121,12 +122,13 @@ func Walk(c *config.Config, root string, f WalkFunc) {
 				haveError = true
 				continue
 			}
-			oldFile, err = bf.Parse(oldPath, oldData)
+			oldBzl, err := bzl.Parse(oldPath, oldData)
 			if err != nil {
 				log.Print(err)
 				haveError = true
 				continue
 			}
+			oldFile = rule.LoadFile(oldBzl)
 		}
 
 		// Process directives in the build file. If this is a vendor directory,
@@ -141,10 +143,10 @@ func Walk(c *config.Config, root string, f WalkFunc) {
 		}
 		var directives []config.Directive
 		if oldFile != nil {
-			directives = config.ParseDirectives(oldFile)
+			directives = oldFile.Directives
 			c = config.ApplyDirectives(c, directives, rel)
 		}
-		c = config.InferProtoMode(c, rel, oldFile, directives)
+		c = config.InferProtoMode(c, rel, oldFile.File, directives)
 
 		var ignore bool
 		for _, d := range directives {
@@ -366,19 +368,14 @@ func defaultPackageName(c *config.Config, dir string) string {
 	return name
 }
 
-func findGenFiles(f *bf.File, excluded []string) []string {
+func findGenFiles(f *rule.File, excluded []string) []string {
 	var strs []string
-	for _, r := range f.Rules("") {
+	for _, r := range f.Rules {
 		for _, key := range []string{"out", "outs"} {
-			switch e := r.Attr(key).(type) {
-			case *bf.StringExpr:
-				strs = append(strs, e.Value)
-			case *bf.ListExpr:
-				for _, elem := range e.List {
-					if s, ok := elem.(*bf.StringExpr); ok {
-						strs = append(strs, s.Value)
-					}
-				}
+			if s := r.AttrString(key); s != "" {
+				strs = append(strs, s)
+			} else if ss := r.AttrStrings(key); len(s) > 0 {
+				strs = append(strs, ss...)
 			}
 		}
 	}

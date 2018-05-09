@@ -181,7 +181,7 @@ func init() {
 				BuildAttrs[kind] = make(map[string]bool)
 			}
 			for attr := range attrs {
-				BuildAttrs[attr] = true
+				BuildAttrs[kind][attr] = true
 			}
 		}
 	}
@@ -192,11 +192,11 @@ func init() {
 // rules in empty with matching rules in f and deletes rules that
 // are empty after merging. attrs is the set of attributes to merge. Attributes
 // not in this set will be left alone if they already exist.
-func MergeFile(oldFile, emptyFile, genFile *rule.File, attrs rule.MergeableAttrs) (mergedRules []*rule.Rule) {
+func MergeFile(oldFile *rule.File, emptyRules, genRules []*rule.Rule, attrs rule.MergeableAttrs) (mergedRules []*rule.Rule) {
 	// Merge empty rules into the file and delete any rules which become empty.
-	for _, emptyRule := range emptyFile.Rules {
+	for _, emptyRule := range emptyRules {
 		if oldRule, _ := match(oldFile.Rules, emptyRule); oldRule != nil {
-			rule.MergeRules(emptyRule, oldRule, attrs)
+			rule.MergeRules(emptyRule, oldRule, attrs, oldFile.Path)
 			if isRuleEmpty(oldRule) {
 				oldRule.Delete()
 			}
@@ -206,10 +206,10 @@ func MergeFile(oldFile, emptyFile, genFile *rule.File, attrs rule.MergeableAttrs
 
 	// Match generated rules with existing rules in the file. Keep track of
 	// rules with non-standard names.
-	matchRules := make([]*rule.Rule, len(genFile.Rules))
-	matchErrors := make([]error, len(genFile.Rules))
+	matchRules := make([]*rule.Rule, len(genRules))
+	matchErrors := make([]error, len(genRules))
 	substitutions := make(map[string]string)
-	for i, genRule := range genFile.Rules {
+	for i, genRule := range genRules {
 		oldRule, err := match(oldFile.Rules, genRule)
 		if err != nil {
 			// TODO(jayconrod): add a verbose mode and log errors. They are too chatty
@@ -227,21 +227,21 @@ func MergeFile(oldFile, emptyFile, genFile *rule.File, attrs rule.MergeableAttrs
 
 	// Rename labels in generated rules that refer to other generated rules.
 	if len(substitutions) > 0 {
-		for _, genRule := range genFile.Rules {
+		for _, genRule := range genRules {
 			substituteRule(genRule, substitutions)
 		}
 	}
 
 	// Merge generated rules with existing rules or append to the end of the file.
-	for i, genRule := range genFile.Rules {
+	for i, genRule := range genRules {
 		if matchErrors[i] != nil {
 			continue
 		}
 		if matchRules[i] == nil {
-			genRule.Insert()
+			genRule.Insert(oldFile)
 			mergedRules = append(mergedRules, genRule)
 		} else {
-			rule.MergeRules(genRule, matchRules[i], attrs)
+			rule.MergeRules(genRule, matchRules[i], attrs, oldFile.Path)
 			mergedRules = append(mergedRules, matchRules[i])
 		}
 	}
@@ -677,13 +677,16 @@ var substituteAttrs = map[string][]string{
 // a new expression; it will not modify the original expression.
 func substituteRule(r *rule.Rule, substitutions map[string]string) {
 	for _, attr := range substituteAttrs[r.Kind()] {
-		r.MapAttrStrings(attr, func(s string) string {
-			if rename, ok := substitutions[strings.TrimPrefix(s, ":")]; ok {
-				return ":" + rename
-			} else {
-				return s
-			}
-		})
+		if expr := r.Attr(attr); expr != nil {
+			expr = rule.MapExprStrings(expr, func(s string) string {
+				if rename, ok := substitutions[strings.TrimPrefix(s, ":")]; ok {
+					return ":" + rename
+				} else {
+					return s
+				}
+			})
+			r.SetAttr(attr, expr)
+		}
 	}
 }
 
@@ -764,7 +767,7 @@ func match(rules []*rule.Rule, x *rule.Rule) (*rule.Rule, error) {
 			continue
 		}
 		for _, y := range kindMatches {
-			if xvalue == y.AttrString(key)
+			if xvalue == y.AttrString(key) {
 				attrMatches = append(attrMatches, y)
 			}
 		}

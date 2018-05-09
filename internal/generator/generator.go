@@ -23,6 +23,7 @@ import (
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/label"
+	"github.com/bazelbuild/bazel-gazelle/internal/merger"
 	"github.com/bazelbuild/bazel-gazelle/internal/packages"
 	"github.com/bazelbuild/bazel-gazelle/internal/pathtools"
 	"github.com/bazelbuild/bazel-gazelle/internal/rule"
@@ -57,7 +58,9 @@ func (g *Generator) GenerateRules(pkg *packages.Package) (gen, empty []*rule.Rul
 		g.generateTest(pkg, libName))
 
 	for _, r := range gen {
-		if r.IsEmpty() {
+		// TODO(jayconrod): don't depend on merger package. Get BuildAttrs from
+		// the Language interface when that's introduced.
+		if r.IsEmpty(merger.BuildAttrs) {
 			empty = append(empty, r)
 		} else {
 			gen = append(gen, r)
@@ -133,7 +136,7 @@ func (g *Generator) generateBin(pkg *packages.Package, library string) *rule.Rul
 		return goBinary // empty
 	}
 	visibility := checkInternalVisibility(pkg.Rel, "//visibility:public")
-	g.setCommonAttrs(goBinary, pkg.Rel, name, visibility, pkg.Binary)
+	g.setCommonAttrs(goBinary, pkg.Rel, visibility, pkg.Binary)
 	if library != "" {
 		goBinary.SetAttr("embed", []string{":" + library})
 	}
@@ -154,7 +157,7 @@ func (g *Generator) generateLib(pkg *packages.Package, goProtoName string) (stri
 		visibility = checkInternalVisibility(pkg.Rel, "//visibility:public")
 	}
 
-	g.setCommonAttrs(goLibrary, pkg.Rel, name, visibility, pkg.Library)
+	g.setCommonAttrs(goLibrary, pkg.Rel, visibility, pkg.Library)
 	g.setImportAttrs(goLibrary, pkg)
 	if goProtoName != "" {
 		goLibrary.SetAttr("embed", ":"+goProtoName)
@@ -191,12 +194,11 @@ func (g *Generator) generateTest(pkg *packages.Package, library string) *rule.Ru
 	if !pkg.Test.HasGo() {
 		return goTest // empty
 	}
-	g.setCommonAttrs(goTest, pkg.Rel, name, "", pkg.Test)
+	g.setCommonAttrs(goTest, pkg.Rel, "", pkg.Test)
 	if library != "" {
 		goTest.SetAttr("embed", []string{":" + library})
 	}
 	if pkg.HasTestdata {
-		glob := rule.GlobValue{Patterns: []string{"testdata/**"}}
 		goTest.SetAttr("data", rule.GlobValue{Patterns: []string{"testdata/**"}})
 	}
 	return goTest
@@ -204,7 +206,7 @@ func (g *Generator) generateTest(pkg *packages.Package, library string) *rule.Ru
 
 func (g *Generator) setCommonAttrs(r *rule.Rule, pkgRel, visibility string, target packages.GoTarget) {
 	if !target.Sources.IsEmpty() {
-		r.SetAttr("srcs", target.SetAttr.Flat())
+		r.SetAttr("srcs", target.Sources.Flat())
 	}
 	if target.Cgo {
 		r.SetAttr("cgo", true)
@@ -222,7 +224,6 @@ func (g *Generator) setCommonAttrs(r *rule.Rule, pkgRel, visibility string, targ
 	if !imports.IsEmpty() {
 		r.SetAttr(config.GazelleImportsKey, imports)
 	}
-	return attrs
 }
 
 func (g *Generator) setImportAttrs(r *rule.Rule, pkg *packages.Package) {

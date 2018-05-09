@@ -17,12 +17,96 @@ package rule
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/label"
 	bzl "github.com/bazelbuild/buildtools/build"
 )
+
+func MapExprStrings(e bzl.Expr, f func(string) string) bzl.Expr {
+	if e == nil {
+		return nil
+	}
+	switch expr := e.(type) {
+	case *bzl.StringExpr:
+		s := f(expr.Value)
+		if s == "" {
+			return nil
+		}
+		ret := *expr
+		ret.Value = s
+		return &ret
+
+	case *bzl.ListExpr:
+		var list []bzl.Expr
+		for _, elem := range expr.List {
+			elem = MapExprStrings(elem, f)
+			if elem != nil {
+				list = append(list, elem)
+			}
+		}
+		if len(list) == 0 && len(expr.List) > 0 {
+			return nil
+		}
+		ret := *expr
+		ret.List = list
+		return &ret
+
+	case *bzl.DictExpr:
+		var cases []bzl.Expr
+		isEmpty := true
+		for _, kv := range expr.List {
+			keyval, ok := kv.(*bzl.KeyValueExpr)
+			if !ok {
+				log.Panicf("unexpected expression in generated imports dict: %#v", kv)
+			}
+			value := MapExprStrings(keyval.Value, f)
+			if value != nil {
+				cases = append(cases, &bzl.KeyValueExpr{Key: keyval.Key, Value: value})
+				if key, ok := keyval.Key.(*bzl.StringExpr); !ok || key.Value != "//conditions:default" {
+					isEmpty = false
+				}
+			}
+		}
+		if isEmpty {
+			return nil
+		}
+		ret := *expr
+		ret.List = cases
+		return &ret
+
+	case *bzl.CallExpr:
+		if x, ok := expr.X.(*bzl.LiteralExpr); !ok || x.Token != "select" || len(expr.List) != 1 {
+			log.Panicf("unexpected call expression in generated imports: %#v", e)
+		}
+		arg := MapExprStrings(expr.List[0], f)
+		if arg == nil {
+			return nil
+		}
+		call := *expr
+		call.List[0] = arg
+		return &call
+
+	case *bzl.BinaryExpr:
+		x := MapExprStrings(expr.X, f)
+		y := MapExprStrings(expr.Y, f)
+		if x == nil {
+			return y
+		}
+		if y == nil {
+			return x
+		}
+		binop := *expr
+		binop.X = x
+		binop.Y = y
+		return &binop
+
+	default:
+		return nil
+	}
+}
 
 func isScalar(e bzl.Expr) bool {
 	switch e.(type) {
