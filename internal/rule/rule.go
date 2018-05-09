@@ -27,6 +27,8 @@ package rule
 
 import (
 	"io/ioutil"
+	"log"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -121,6 +123,17 @@ func ScanAST(bzlFile *bzl.File) *File {
 	}
 	f.Directives = ParseDirectives(bzlFile)
 	return f
+}
+
+// Rel returns the slash-separated relative path from the given absolute path to
+// the directory containing this file. If the file is in the root directory, Rel
+// returns "". This string may be used as a Bazel package name.
+func (f *File) Rel(root string) string {
+	rel, err := filepath.Rel(root, filepath.Dir(f.Path))
+	if err != nil {
+		log.Panicf("%s is not a parent of %s", root, f.Path)
+	}
+	return filepath.ToSlash(rel)
 }
 
 // Sync writes all changes back to the wrapped syntax tree. This should be
@@ -430,9 +443,10 @@ func ruleFromExpr(index int, expr bzl.Expr) *Rule {
 			index: index,
 			call:  call,
 		},
-		kind:  kind,
-		args:  args,
-		attrs: attrs,
+		kind:    kind,
+		args:    args,
+		attrs:   attrs,
+		private: map[string]interface{}{},
 	}
 }
 
@@ -577,12 +591,11 @@ func (r *Rule) Insert(f *File) {
 // IsEmpty returns true when the rule contains none of the attributes in attrs
 // for its kind. attrs should contain attributes that make the rule buildable
 // like srcs or deps and not descriptive attributes like name or visibility.
-func (r *Rule) IsEmpty(attrs MergeableAttrs) bool {
-	nonEmptyAttrs := attrs[r.kind]
-	if nonEmptyAttrs == nil {
+func (r *Rule) IsEmpty(info KindInfo) bool {
+	if info.NonEmptyAttrs == nil {
 		return false
 	}
-	for k := range nonEmptyAttrs {
+	for k := range info.NonEmptyAttrs {
 		if _, ok := r.attrs[k]; ok {
 			return false
 		}

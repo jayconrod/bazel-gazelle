@@ -45,9 +45,6 @@ const (
 	// WellKnownTypeProtoPrefix is the proto import path prefix for the
 	// Well Known Types.
 	WellKnownTypesProtoPrefix = "google/protobuf"
-	// WellKnownTypesGoPrefix is the import path for the Go repository containing
-	// pre-generated code for the Well Known Types.
-	WellKnownTypesGoPrefix = "github.com/golang/protobuf"
 	// WellKnownTypesPkg is the package name for the predefined WKTs in rules_go.
 	WellKnownTypesPkg = "proto/wkt"
 
