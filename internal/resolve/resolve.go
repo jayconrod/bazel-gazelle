@@ -31,9 +31,9 @@ import (
 	bzl "github.com/bazelbuild/buildtools/build"
 )
 
-// Resolver resolves import strings in source files (import paths in Go,
+// ResolverOld resolves import strings in source files (import paths in Go,
 // import statements in protos) into Bazel labels.
-type Resolver struct {
+type ResolverOld struct {
 	c        *config.Config
 	l        *labeler.Labeler
 	ix       *RuleIndex
@@ -47,7 +47,7 @@ type nonlocalResolver interface {
 	resolve(imp string) (label.Label, error)
 }
 
-func NewResolver(c *config.Config, l *labeler.Labeler, ix *RuleIndex, rc *repos.RemoteCache) *Resolver {
+func NewResolver(c *config.Config, l *labeler.Labeler, ix *RuleIndex, rc *repos.RemoteCache) *ResolverOld {
 	var e nonlocalResolver
 	switch c.DepMode {
 	case config.ExternalMode:
@@ -56,7 +56,7 @@ func NewResolver(c *config.Config, l *labeler.Labeler, ix *RuleIndex, rc *repos.
 		e = newVendoredResolver(l)
 	}
 
-	return &Resolver{
+	return &ResolverOld{
 		c:        c,
 		l:        l,
 		ix:       ix,
@@ -69,7 +69,7 @@ func NewResolver(c *config.Config, l *labeler.Labeler, ix *RuleIndex, rc *repos.
 // attribute. This may be safely called on expressions that aren't Go rules
 // (the original expression will be returned). Any existing "deps" attribute
 // is deleted, so it may be necessary to merge the result.
-func (rslv *Resolver) ResolveRule(r *rule.Rule, pkgRel string) {
+func (rslv *ResolverOld) ResolveRule(r *rule.Rule, pkgRel string) {
 	from := label.New("", pkgRel, r.Name())
 
 	var resolve func(imp string, from label.Label) (label.Label, error)
@@ -128,7 +128,7 @@ func (e standardImportError) Error() string {
 // resolveGo resolves an import path from a Go source file to a label.
 // pkgRel is the path to the Go package relative to the repository root; it
 // is used to resolve relative imports.
-func (rslv *Resolver) resolveGo(imp string, from label.Label) (label.Label, error) {
+func (rslv *ResolverOld) resolveGo(imp string, from label.Label) (label.Label, error) {
 	if build.IsLocalImport(imp) {
 		cleanRel := path.Clean(path.Join(from.Pkg, imp))
 		if build.IsLocalImport(cleanRel) {
@@ -162,7 +162,7 @@ func (rslv *Resolver) resolveGo(imp string, from label.Label) (label.Label, erro
 
 // resolveProto resolves an import statement in a .proto file to a label
 // for a proto_library rule.
-func (rslv *Resolver) resolveProto(imp string, from label.Label) (label.Label, error) {
+func (rslv *ResolverOld) resolveProto(imp string, from label.Label) (label.Label, error) {
 	if !strings.HasSuffix(imp, ".proto") {
 		return label.NoLabel, fmt.Errorf("can't import non-proto: %q", imp)
 	}
@@ -189,7 +189,7 @@ func (rslv *Resolver) resolveProto(imp string, from label.Label) (label.Label, e
 
 // resolveGoProto resolves an import statement in a .proto file to a
 // label for a go_library rule that embeds the corresponding go_proto_library.
-func (rslv *Resolver) resolveGoProto(imp string, from label.Label) (label.Label, error) {
+func (rslv *ResolverOld) resolveGoProto(imp string, from label.Label) (label.Label, error) {
 	if !strings.HasSuffix(imp, ".proto") {
 		return label.NoLabel, fmt.Errorf("can't import non-proto: %q", imp)
 	}

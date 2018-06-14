@@ -24,9 +24,48 @@ import (
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/label"
+	"github.com/bazelbuild/bazel-gazelle/internal/repos"
 	"github.com/bazelbuild/bazel-gazelle/internal/rule"
 	bzl "github.com/bazelbuild/buildtools/build"
 )
+
+// ImportSpec describes a library to be imported.
+type ImportSpec struct {
+	// Lang is the name of the language in which the import appears. This should
+	// match a string returned by Resolver.Name, for example, "go".
+	Lang string
+
+	// Imp is the import string, for example, "fmt" in Go.
+	Imp string
+}
+
+// Resolver is an interface that describes language extensions capable of
+// dependency resolution.
+type Resolver interface {
+	// Name returns the name of the language. By convention, this should be a prefix
+	// of rule kinds associated with the language, e.g., the "go" extension
+	// emits "go_library" rules.
+	Name() string
+
+	// Imports returns a list of names by which a rule can be imported. Imports
+	// should return an empty list for non-importable rules.
+	Imports(c *config.Config, r *rule.Rule, f *rule.File) []ImportSpec
+
+	// Embeds returns a list of labels referring to rules embedded by a given
+	// rule. Embeds should always return an empty list in languages that don't
+	// support embedding.
+	Embeds(r *rule.Rule, from label.Label) []label.Label
+
+	// Resolve translates library imports in the given rule into Bazel
+	// dependencies. Typically, when a rule is generated, the language extension
+	// will store a list of import strings in a hidden attribute. In Go, an
+	// import string looks like
+	// "github.com/bazelbuild/bazel-gazelle/internal/resolve", but this will vary
+	// across languages. Resolve should translate these import strings into
+	// labels like "//internal/resolve:go_default_library". Typically, Resolve
+	// will set the "deps" attribute, replacing any existing "deps" attribute.
+	Resolve(c *config.Config, ix *RuleIndex, rc *repos.RemoteCache, r *rule.Rule, from label.Label)
+}
 
 // RuleIndex is a table of rules in a workspace, indexed by label and by
 // import path. Used by Resolver to map import paths to labels.
