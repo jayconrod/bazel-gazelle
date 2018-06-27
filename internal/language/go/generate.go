@@ -21,6 +21,7 @@ import (
 	"log"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -33,31 +34,31 @@ import (
 func (gl *goLang) GenerateRules(c *config.Config, dir, rel string, f *rule.File, subdirs, regularFiles, genFiles []string, other []*rule.Rule) (empty, gen []*rule.Rule) {
 	// Extract information about proto files. We need this to exclude .pb.go
 	// files and generate go_proto_library rules.
+	gc := getGoConfig(c)
 	pc := proto.GetProtoConfig(c)
-	var protoName string
+	var protoPackages map[string]proto.Package
 	var protoFileInfo map[string]proto.FileInfo
+	var protoRuleNames []string
 	if pc.Mode != proto.DisableMode {
+		protoPackages = make(map[string]proto.Package)
 		protoFileInfo = make(map[string]proto.FileInfo)
 		for _, r := range other {
 			if r.Kind() != "proto_library" {
 				continue
 			}
-			if protoName != "" {
-				// TODO(jayconrod): Currently, the proto extension generates at most one
-				// proto_library rule because this extension can't handle multiple
-				// packages. We should remove this limitation soon.
-				log.Panicf("%s: cannot generate Go rules for multiple proto_library rules", dir)
+			pkg := r.PrivateAttr(proto.PackageKey).(proto.Package)
+			protoPackages[r.Name()] = pkg
+			for name, info := range pkg.Files {
+				protoFileInfo[name] = info
 			}
-			protoName = r.Name()
-			for _, pfi := range r.PrivateAttr(proto.FileInfoKey).([]proto.FileInfo) {
-				protoFileInfo[pfi.Name] = pfi
-			}
+			protoRuleNames = append(protoRuleNames, r.Name())
 		}
+		sort.Strings(protoRuleNames)
 	}
 
 	// If proto rule generation is enabled, exclude .pb.go files that correspond
 	// to any .proto files present.
-	if pc.Mode != proto.DisableMode {
+	if pc.Mode != proto.DisableMode && pc.Mode != proto.LegacyMode {
 		keep := func(f string) bool {
 			if strings.HasSuffix(f, ".pb.go") {
 				_, ok := protoFileInfo[strings.TrimSuffix(f, ".pb.go")+".proto"]
@@ -71,11 +72,10 @@ func (gl *goLang) GenerateRules(c *config.Config, dir, rel string, f *rule.File,
 
 	// Split regular files into files which can determine the package name and
 	// import path and other files.
-	var pkgFiles, otherFiles []string
+	var goFiles, otherFiles []string
 	for _, f := range regularFiles {
-		if strings.HasSuffix(f, ".go") ||
-			pc.Mode != proto.DisableMode && strings.HasSuffix(f, ".proto") {
-			pkgFiles = append(pkgFiles, f)
+		if strings.HasSuffix(f, ".go") {
+			goFiles = append(goFiles, f)
 		} else {
 			otherFiles = append(otherFiles, f)
 		}
@@ -92,17 +92,117 @@ func (gl *goLang) GenerateRules(c *config.Config, dir, rel string, f *rule.File,
 		}
 	}
 
-	// Build a package from files in this directory.
-	pkg := buildPackage(c, dir, rel, pkgFiles, otherFiles, genFiles, hasTestdata, protoName, protoFileInfo)
-	if pkg != nil && path.Base(rel) == "testdata" {
-		gl.testdataPkgs[rel] = true
+	// Build a set of packages from files in this directory.
+	goPackageMap, goFilesWithUnknownPackage := buildPackages(c, dir, rel, goFiles, hasTestdata)
+
+	// Select a package to generate rules for. Try to link it with a proto rule.
+	var protoName string
+	pkg, err := selectPackage(c, dir, goPackageMap)
+	if err != nil {
+		if _, ok := err.(*build.NoGoError); ok {
+			if len(protoPackages) == 1 {
+				for name, ppkg := range protoPackages {
+					pkg = &goPackage{
+						name:       goProtoPackageName(ppkg),
+						importPath: goProtoImportPath(gc, ppkg, rel),
+					}
+					protoName = name
+					break
+				}
+			}
+		} else {
+			log.Print(err)
+		}
 	}
-	if pkg == nil {
-		pkg = emptyPackage(c, dir, rel)
+	if pkg != nil {
+		if pkg.importPath == "" {
+			if err := pkg.inferImportPath(c); err != nil {
+				inferImportPathErrorOnce.Do(func() { log.Print(err) })
+			}
+		}
+		for _, name := range protoRuleNames {
+			ppkg := protoPackages[name]
+			if pkg.importPath == goProtoImportPath(gc, ppkg, rel) {
+				protoName = name
+				break
+			}
+		}
 	}
 
+	// Generate rules for proto packages not linked to the Go package.
+	// These should come before the other Go rules.
 	g := newGenerator(c, f, rel)
-	return g.generateRules(pkg)
+	var rules []*rule.Rule
+	for _, name := range protoRuleNames {
+		ppkg := protoPackages[name]
+		if name == protoName {
+			continue
+		}
+		target := protoTargetFromProtoPackage(name, ppkg)
+		importPath := goProtoImportPath(gc, ppkg, rel)
+		_, rs := g.generateProto(pc.Mode, target, importPath)
+		rules = append(rules, rs...)
+	}
+
+	// Complete the Go package and generate rules for that.
+	if pkg != nil {
+		// Add files with unknown packages. This happens when there are parse
+		// or I/O errors. We should keep the file in the srcs list and let the
+		// compiler deal with the error.
+		cgo := pkg.haveCgo()
+		for _, info := range goFilesWithUnknownPackage {
+			if err := pkg.addFile(c, info, cgo); err != nil {
+				log.Print(err)
+			}
+		}
+
+		// Process the other static files.
+		for _, file := range otherFiles {
+			info := otherFileInfo(filepath.Join(dir, file))
+			if err := pkg.addFile(c, info, cgo); err != nil {
+				log.Print(err)
+			}
+		}
+
+		// Process generated files. Note that generated files may have the same names
+		// as static files. Bazel will use the generated files, but we will look at
+		// the content of static files, assuming they will be the same.
+		regularFileSet := make(map[string]bool)
+		for _, f := range regularFiles {
+			regularFileSet[f] = true
+		}
+		for _, f := range genFiles {
+			if regularFileSet[f] {
+				continue
+			}
+			info := fileNameInfo(filepath.Join(dir, f))
+			if err := pkg.addFile(c, info, cgo); err != nil {
+				log.Print(err)
+			}
+		}
+
+		// Generate Go rules.
+		protoEmbed, rs := g.generateProto(pc.Mode, pkg.proto, pkg.importPath)
+		rules = append(rules, rs...)
+		lib := g.generateLib(pkg, protoEmbed)
+		var libName string
+		if !lib.IsEmpty(goKinds[lib.Kind()]) {
+			libName = lib.Name()
+		}
+		rules = append(rules, lib)
+		rules = append(rules,
+			g.generateBin(pkg, libName),
+			g.generateTest(pkg, libName))
+	}
+
+	for _, r := range rules {
+		if r.IsEmpty(goKinds[r.Kind()]) {
+			empty = append(empty, r)
+		} else {
+			gen = append(gen, r)
+		}
+	}
+	return empty, gen
 }
 
 func filterFiles(files *[]string, pred func(string) bool) {
@@ -117,37 +217,20 @@ func filterFiles(files *[]string, pred func(string) bool) {
 	*files = (*files)[:w]
 }
 
-// buildPackage reads source files in a given directory and returns a goPackage
-// containing information about those files and how to build them.
-//
-// If no buildable .go files are found in the directory, nil will be returned.
-// If the directory contains multiple buildable packages, the package whose
-// name matches the directory base name will be returned. If there is no such
-// package or if an error occurs, an error will be logged, and nil will be
-// returned.
-func buildPackage(c *config.Config, dir, rel string, pkgFiles, otherFiles, genFiles []string, hasTestdata bool, protoName string, protoInfo map[string]proto.FileInfo) *goPackage {
+func buildPackages(c *config.Config, dir, rel string, goFiles []string, hasTestdata bool) (packageMap map[string]*goPackage, goFilesWithUnknownPackage []fileInfo) {
 	// Process .go and .proto files first, since these determine the package name.
-	packageMap := make(map[string]*goPackage)
-	cgo := false
-	var pkgFilesWithUnknownPackage []fileInfo
-	for _, f := range pkgFiles {
+	packageMap = make(map[string]*goPackage)
+	for _, f := range goFiles {
 		path := filepath.Join(dir, f)
-		var info fileInfo
-		if strings.HasSuffix(f, ".go") {
-			info = goFileInfo(path, rel)
-		} else {
-			info = protoFileInfo(path, protoInfo[f])
-		}
+		info := goFileInfo(path, rel)
 		if info.packageName == "" {
-			pkgFilesWithUnknownPackage = append(pkgFilesWithUnknownPackage, info)
+			goFilesWithUnknownPackage = append(goFilesWithUnknownPackage, info)
 			continue
 		}
 		if info.packageName == "documentation" {
 			// go/build ignores this package
 			continue
 		}
-
-		cgo = cgo || info.isCgo
 
 		if _, ok := packageMap[info.packageName]; !ok {
 			packageMap[info.packageName] = &goPackage{
@@ -161,61 +244,7 @@ func buildPackage(c *config.Config, dir, rel string, pkgFiles, otherFiles, genFi
 			log.Print(err)
 		}
 	}
-
-	// Select a package to generate rules for.
-	pkg, err := selectPackage(c, dir, packageMap)
-	if err != nil {
-		if _, ok := err.(*build.NoGoError); !ok {
-			log.Print(err)
-		}
-		return nil
-	}
-
-	// Add files with unknown packages. This happens when there are parse
-	// or I/O errors. We should keep the file in the srcs list and let the
-	// compiler deal with the error.
-	for _, info := range pkgFilesWithUnknownPackage {
-		if err := pkg.addFile(c, info, cgo); err != nil {
-			log.Print(err)
-		}
-	}
-
-	// Process the other static files.
-	for _, file := range otherFiles {
-		info := otherFileInfo(filepath.Join(dir, file))
-		if err := pkg.addFile(c, info, cgo); err != nil {
-			log.Print(err)
-		}
-	}
-
-	// Process generated files. Note that generated files may have the same names
-	// as static files. Bazel will use the generated files, but we will look at
-	// the content of static files, assuming they will be the same.
-	staticFiles := make(map[string]bool)
-	for _, f := range pkgFiles {
-		staticFiles[f] = true
-	}
-	for _, f := range otherFiles {
-		staticFiles[f] = true
-	}
-	for _, f := range genFiles {
-		if staticFiles[f] {
-			continue
-		}
-		info := fileNameInfo(filepath.Join(dir, f))
-		if err := pkg.addFile(c, info, cgo); err != nil {
-			log.Print(err)
-		}
-	}
-
-	if pkg.importPath == "" {
-		if err := pkg.inferImportPath(c); err != nil {
-			inferImportPathErrorOnce.Do(func() { log.Print(err) })
-			return nil
-		}
-	}
-	pkg.proto.name = protoName
-	return pkg
+	return packageMap, goFilesWithUnknownPackage
 }
 
 var inferImportPathErrorOnce sync.Once
@@ -306,29 +335,7 @@ func newGenerator(c *config.Config, f *rule.File, rel string) *generator {
 	return &generator{c: c, rel: rel, shouldSetVisibility: shouldSetVisibility}
 }
 
-func (g *generator) generateRules(pkg *goPackage) (empty, gen []*rule.Rule) {
-	protoMode := proto.GetProtoConfig(g.c).Mode
-	protoEmbed, rules := g.generateProto(protoMode, pkg)
-	var libName string
-	lib := g.generateLib(pkg, protoEmbed)
-	rules = append(rules, lib)
-	if !lib.IsEmpty(goKinds[lib.Kind()]) {
-		libName = lib.Name()
-	}
-	rules = append(rules,
-		g.generateBin(pkg, libName),
-		g.generateTest(pkg, libName))
-	for _, r := range rules {
-		if !r.IsEmpty(goKinds[r.Kind()]) {
-			gen = append(gen, r)
-		} else {
-			empty = append(empty, r)
-		}
-	}
-	return empty, gen
-}
-
-func (g *generator) generateProto(mode proto.Mode, pkg *goPackage) (string, []*rule.Rule) {
+func (g *generator) generateProto(mode proto.Mode, target protoTarget, importPath string) (string, []*rule.Rule) {
 	if mode == proto.DisableMode {
 		// Don't create or delete proto rules in this mode. Any existing rules
 		// are likely hand-written.
@@ -336,26 +343,26 @@ func (g *generator) generateProto(mode proto.Mode, pkg *goPackage) (string, []*r
 	}
 
 	filegroupName := config.DefaultProtosName
-	protoName := pkg.proto.name
+	protoName := target.name
 	if protoName == "" {
 		protoName = proto.RuleName("", g.rel, getGoConfig(g.c).prefix)
 	}
 	goProtoName := strings.TrimSuffix(protoName, "_proto") + "_go_proto"
-	visibility := []string{checkInternalVisibility(pkg.rel, "//visibility:public")}
+	visibility := []string{checkInternalVisibility(g.rel, "//visibility:public")}
 
 	if mode == proto.LegacyMode {
 		filegroup := rule.NewRule("filegroup", filegroupName)
-		if pkg.proto.sources.isEmpty() {
+		if target.sources.isEmpty() {
 			return "", []*rule.Rule{filegroup}
 		}
-		filegroup.SetAttr("srcs", pkg.proto.sources.build())
+		filegroup.SetAttr("srcs", target.sources.build())
 		if g.shouldSetVisibility {
 			filegroup.SetAttr("visibility", visibility)
 		}
 		return "", []*rule.Rule{filegroup}
 	}
 
-	if pkg.proto.sources.isEmpty() {
+	if target.sources.isEmpty() {
 		return "", []*rule.Rule{
 			rule.NewRule("filegroup", filegroupName),
 			rule.NewRule("go_proto_library", goProtoName),
@@ -364,14 +371,14 @@ func (g *generator) generateProto(mode proto.Mode, pkg *goPackage) (string, []*r
 
 	goProtoLibrary := rule.NewRule("go_proto_library", goProtoName)
 	goProtoLibrary.SetAttr("proto", ":"+protoName)
-	g.setImportAttrs(goProtoLibrary, pkg)
-	if pkg.proto.hasServices {
+	g.setImportAttrs(goProtoLibrary, importPath)
+	if target.hasServices {
 		goProtoLibrary.SetAttr("compilers", []string{"@io_bazel_rules_go//proto:go_grpc"})
 	}
 	if g.shouldSetVisibility {
 		goProtoLibrary.SetAttr("visibility", visibility)
 	}
-	goProtoLibrary.SetPrivateAttr(config.GazelleImportsKey, pkg.proto.imports.build())
+	goProtoLibrary.SetPrivateAttr(config.GazelleImportsKey, target.imports.build())
 	return goProtoName, []*rule.Rule{goProtoLibrary}
 }
 
@@ -388,7 +395,7 @@ func (g *generator) generateLib(pkg *goPackage, embed string) *rule.Rule {
 		visibility = checkInternalVisibility(pkg.rel, "//visibility:public")
 	}
 	g.setCommonAttrs(goLibrary, pkg.rel, visibility, pkg.library, embed)
-	g.setImportAttrs(goLibrary, pkg)
+	g.setImportAttrs(goLibrary, pkg.importPath)
 	return goLibrary
 }
 
@@ -437,13 +444,13 @@ func (g *generator) setCommonAttrs(r *rule.Rule, pkgRel, visibility string, targ
 	r.SetPrivateAttr(config.GazelleImportsKey, target.imports.build())
 }
 
-func (g *generator) setImportAttrs(r *rule.Rule, pkg *goPackage) {
-	r.SetAttr("importpath", pkg.importPath)
+func (g *generator) setImportAttrs(r *rule.Rule, importPath string) {
+	r.SetAttr("importpath", importPath)
 	goConf := getGoConfig(g.c)
 	if goConf.importMapPrefix != "" {
-		fromPrefixRel := pathtools.TrimPrefix(pkg.rel, goConf.importMapPrefixRel)
+		fromPrefixRel := pathtools.TrimPrefix(g.rel, goConf.importMapPrefixRel)
 		importMap := path.Join(goConf.importMapPrefix, fromPrefixRel)
-		if importMap != pkg.importPath {
+		if importMap != importPath {
 			r.SetAttr("importmap", importMap)
 		}
 	}

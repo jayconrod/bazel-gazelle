@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/internal/config"
+	"github.com/bazelbuild/bazel-gazelle/internal/language/proto"
 	"github.com/bazelbuild/bazel-gazelle/internal/rule"
 )
 
@@ -136,6 +137,10 @@ func (pkg *goPackage) firstGoFile() string {
 	return ""
 }
 
+func (pkg *goPackage) haveCgo() bool {
+	return pkg.library.cgo || pkg.binary.cgo || pkg.test.cgo
+}
+
 func (pkg *goPackage) inferImportPath(c *config.Config) error {
 	if pkg.importPath != "" {
 		log.Panic("importPath already set")
@@ -165,6 +170,34 @@ func inferImportPath(gc *goConfig, rel string) string {
 	}
 }
 
+func goProtoPackageName(pkg proto.Package) string {
+	if value, ok := pkg.Options["go_package"]; ok {
+		if strings.LastIndexByte(value, '/') == -1 {
+			return value
+		} else {
+			if i := strings.LastIndexByte(value, ';'); i != -1 {
+				return value[i+1:]
+			} else {
+				return path.Base(value)
+			}
+		}
+	}
+	return strings.Replace(pkg.Name, ".", "_", -1)
+}
+
+func goProtoImportPath(gc *goConfig, pkg proto.Package, rel string) string {
+	if value, ok := pkg.Options["go_package"]; ok {
+		if strings.LastIndexByte(value, '/') == -1 {
+			return inferImportPath(gc, rel)
+		} else {
+			if i := strings.LastIndexByte(value, ';'); i != -1 {
+				return value[:i]
+			}
+		}
+	}
+	return inferImportPath(gc, rel)
+}
+
 func (t *goTarget) addFile(c *config.Config, info fileInfo) {
 	t.cgo = t.cgo || info.isCgo
 	add := getPlatformStringsAddFunction(c, info, nil)
@@ -184,6 +217,18 @@ func (t *goTarget) addFile(c *config.Config, info fileInfo) {
 		}
 		optAdd(&t.clinkopts, clinkopts.opts)
 	}
+}
+
+func protoTargetFromProtoPackage(name string, pkg proto.Package) protoTarget {
+	target := protoTarget{name: name}
+	for f := range pkg.Files {
+		target.sources.addGenericString(f)
+	}
+	for i := range pkg.Imports {
+		target.imports.addGenericString(i)
+	}
+	target.hasServices = pkg.HasServices
+	return target
 }
 
 func (t *protoTarget) addFile(c *config.Config, info fileInfo) {

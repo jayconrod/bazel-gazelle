@@ -77,12 +77,12 @@ func RuleName(goPkgName, rel, goPrefix string) string {
 // buildPackage extracts metadata from the .proto files in a directory and
 // constructs possibly several packages, then selects a package to generate
 // a proto_library rule for.
-func buildPackages(pc *ProtoConfig, dir, rel string, protoFiles, genFiles []string) []*protoPackage {
-	packageMap := make(map[string]*protoPackage)
+func buildPackages(pc *ProtoConfig, dir, rel string, protoFiles, genFiles []string) []*Package {
+	packageMap := make(map[string]*Package)
 	for _, name := range protoFiles {
 		info := protoFileInfo(dir, name)
 		if packageMap[info.PackageName] == nil {
-			packageMap[info.PackageName] = newProtoPackage(info.PackageName)
+			packageMap[info.PackageName] = newPackage(info.PackageName)
 		}
 		packageMap[info.PackageName].addFile(info)
 	}
@@ -99,10 +99,10 @@ func buildPackages(pc *ProtoConfig, dir, rel string, protoFiles, genFiles []stri
 		for _, name := range genFiles {
 			pkg.addGenFile(dir, name)
 		}
-		return []*protoPackage{pkg}
+		return []*Package{pkg}
 
 	case PackageMode:
-		pkgs := make([]*protoPackage, 0, len(packageMap))
+		pkgs := make([]*Package, 0, len(packageMap))
 		for _, pkg := range packageMap {
 			pkgs = append(pkgs, pkg)
 		}
@@ -114,7 +114,7 @@ func buildPackages(pc *ProtoConfig, dir, rel string, protoFiles, genFiles []stri
 }
 
 // selectPackage chooses a package to generate rules for.
-func selectPackage(dir, rel string, packageMap map[string]*protoPackage) (*protoPackage, error) {
+func selectPackage(dir, rel string, packageMap map[string]*Package) (*Package, error) {
 	if len(packageMap) == 0 {
 		return nil, nil
 	}
@@ -138,8 +138,8 @@ func selectPackage(dir, rel string, packageMap map[string]*protoPackage) (*proto
 //
 // TODO(jayconrod): remove all Go-specific functionality. This is here
 // temporarily for compatibility.
-func goPackageName(pkg *protoPackage) string {
-	if opt, ok := pkg.options["go_package"]; ok {
+func goPackageName(pkg *Package) string {
+	if opt, ok := pkg.Options["go_package"]; ok {
 		if i := strings.IndexByte(opt, ';'); i >= 0 {
 			return opt[i+1:]
 		} else if i := strings.LastIndexByte(opt, '/'); i >= 0 {
@@ -148,11 +148,11 @@ func goPackageName(pkg *protoPackage) string {
 			return opt
 		}
 	}
-	if pkg.name != "" {
-		return strings.Replace(pkg.name, ".", "_", -1)
+	if pkg.Name != "" {
+		return strings.Replace(pkg.Name, ".", "_", -1)
 	}
-	if len(pkg.files) == 1 {
-		for s := range pkg.files {
+	if len(pkg.Files) == 1 {
+		for s := range pkg.Files {
 			return strings.TrimSuffix(s, ".proto")
 		}
 	}
@@ -161,38 +161,34 @@ func goPackageName(pkg *protoPackage) string {
 
 // generateProto creates a new proto_library rule for a package. The rule may
 // be empty if there are no sources.
-func generateProto(pc *ProtoConfig, rel string, pkg *protoPackage, shouldSetVisibility bool) *rule.Rule {
+func generateProto(pc *ProtoConfig, rel string, pkg *Package, shouldSetVisibility bool) *rule.Rule {
 	var name string
 	if pc.Mode == DefaultMode {
 		name = RuleName(goPackageName(pkg), rel, pc.GoPrefix)
-	} else if pkg.name != "" {
-		nameParts := strings.Split(pkg.name, ".")
+	} else if pkg.Name != "" {
+		nameParts := strings.Split(pkg.Name, ".")
 		nameBase := nameParts[len(nameParts)-1]
 		name = RuleName(nameBase, "", "")
 	} else {
 		name = RuleName("", rel, "")
 	}
 	r := rule.NewRule("proto_library", name)
-	srcs := make([]string, 0, len(pkg.files))
-	for f := range pkg.files {
+	srcs := make([]string, 0, len(pkg.Files))
+	for f := range pkg.Files {
 		srcs = append(srcs, f)
 	}
 	sort.Strings(srcs)
 	if len(srcs) > 0 {
 		r.SetAttr("srcs", srcs)
 	}
-	info := make([]FileInfo, len(srcs))
-	for i, src := range srcs {
-		info[i] = pkg.files[src]
-	}
-	r.SetPrivateAttr(FileInfoKey, info)
-	imports := make([]string, 0, len(pkg.imports))
-	for i := range pkg.imports {
+	r.SetPrivateAttr(PackageKey, *pkg)
+	imports := make([]string, 0, len(pkg.Imports))
+	for i := range pkg.Imports {
 		imports = append(imports, i)
 	}
 	sort.Strings(imports)
 	r.SetPrivateAttr(config.GazelleImportsKey, imports)
-	for k, v := range pkg.options {
+	for k, v := range pkg.Options {
 		r.SetPrivateAttr(k, v)
 	}
 	if shouldSetVisibility {
