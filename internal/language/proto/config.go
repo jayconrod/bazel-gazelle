@@ -66,6 +66,10 @@ const (
 	// LegacyMode generates filegroups for .proto files if .pb.go files are
 	// present in the same directory.
 	LegacyMode
+
+	// PackageMode generates a proto_library for each set of .proto files with
+	// the same package name in each directory.
+	PackageMode
 )
 
 func ModeFromString(s string) (Mode, error) {
@@ -76,6 +80,8 @@ func ModeFromString(s string) (Mode, error) {
 		return DisableMode, nil
 	case "legacy":
 		return LegacyMode, nil
+	case "package":
+		return PackageMode, nil
 	default:
 		return 0, fmt.Errorf("unrecognized proto mode: %q", s)
 	}
@@ -89,6 +95,8 @@ func (m Mode) String() string {
 		return "disable"
 	case LegacyMode:
 		return "legacy"
+	case PackageMode:
+		return "package"
 	default:
 		log.Panicf("unknown mode %d", m)
 		return ""
@@ -123,7 +131,7 @@ func (_ *protoLang) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config
 	// Note: the -proto flag does not set the ModeExplicit flag. We want to
 	// be able to switch to DisableMode in vendor directories, even when
 	// this is set for compatibility with older versions.
-	fs.Var(&modeFlag{&pc.Mode}, "proto", "default: generates new proto rules\n\tdisable: does not touch proto rules\n\t")
+	fs.Var(&modeFlag{&pc.Mode}, "proto", "default: generates a proto_library rule for one package\n\tpackage: generates a proto_library rule for for each package\n\tdisable: does not touch proto rules\n\t")
 }
 
 func (_ *protoLang) CheckFlags(fs *flag.FlagSet, c *config.Config) error {

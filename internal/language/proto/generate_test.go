@@ -76,7 +76,30 @@ func TestGenerateRulesEmpty(t *testing.T) {
 	c := config.New()
 	c.Exts[protoName] = &ProtoConfig{}
 
-	empty, gen := lang.GenerateRules(c, "", "foo", nil, nil, nil, nil, nil)
+	oldContent := []byte(`
+proto_library(
+    name = "dead_proto",
+    srcs = ["foo.proto"],
+)
+
+proto_library(
+    name = "live_proto",
+    srcs = ["bar.proto"],
+)
+
+COMPLICATED_SRCS = ["baz.proto"]
+
+proto_library(
+    name = "complicated_proto",
+    srcs = COMPLICATED_SRCS,
+)
+`)
+	old, err := rule.LoadData("BUILD.bazel", oldContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genFiles := []string{"bar.proto"}
+	empty, gen := lang.GenerateRules(c, "", "foo", old, nil, nil, genFiles, nil)
 	if len(gen) > 0 {
 		t.Errorf("got %d generated rules; want 0", len(gen))
 	}
@@ -86,7 +109,7 @@ func TestGenerateRulesEmpty(t *testing.T) {
 	}
 	f.Sync()
 	got := strings.TrimSpace(string(bzl.Format(f.File)))
-	want := `proto_library(name = "foo_proto")`
+	want := `proto_library(name = "dead_proto")`
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
