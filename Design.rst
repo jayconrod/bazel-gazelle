@@ -8,6 +8,7 @@ Architecture of Gazelle
 .. _config: https://godoc.org/github.com/bazelbuild/bazel-gazelle/internal/config
 .. _go/build: https://godoc.org/go/build
 .. _go/parser: https://godoc.org/go/parser
+.. _language: https://godoc.org/github.com/bazelbuild/bazel-gazelle/internal/language
 .. _merger: https://godoc.org/github.com/bazelbuild/bazel-gazelle/internal/merger
 .. _packages: https://godoc.org/github.com/bazelbuild/bazel-gazelle/internal/packages
 .. _resolve: https://godoc.org/github.com/bazelbuild/bazel-gazelle/internal/resolve
@@ -28,9 +29,13 @@ Architecture of Gazelle
 
 .. Actual content is below
 
-Gazelle is a tool that generates and updates Bazel build files for Go projects
-that follow the conventional "go build" project layout. It is intended to
-simplify the maintenance of Bazel Go projects as much as possible.
+Gazelle is a tool that automatically generates and updates Bazel build files
+using metadata extracted from source files. Currently, Gazelle has support for
+Go projects following the conventional "go build" project layout, and it has
+limited support for protocol buffers. It may be extended to support other
+languages in the future. Gazelle is intended to simplify the maintenance of
+Bazel projects as much as possible, especially for languages that don't
+traditionally use build files.
 
 This document describes how Gazelle works. It should help users understand why
 Gazelle behaves as it does, and it should help developers understand
@@ -42,7 +47,7 @@ Overview
 --------
 
 Gazelle generates and updates build files according the algorithm outlined
-below. Each of the steps here is described in more detail in the sections below.
+here. Each of the steps here is described in more detail in the sections below.
 
 * Build a configuration from command line arguments and special comments
   in the top-level build file. See Configuration_.
@@ -78,6 +83,30 @@ below. Each of the steps here is described in more detail in the sections below.
   * Format the file using buildifier_ and emit it according to the output mode:
     write to disk, print the whole file, or print the diff.
 
+Language extensions
+-------------------
+
+Godoc: language_
+
+Gazelle supports language-specific functionality through an extension mechanism.
+To support a new language, one just needs to implement the ``Language``
+interface and register the implementation in the ``main`` package.
+
+``Language`` implementations must provide the following functionality:
+
+* Configuration: language extensions may register command line flags and may
+  interpret directives in build files.
+* Fixing: language extensions may transform build files to fix usage of
+  deprecated rules.
+* Rule generation: language extensions may read source files in each directory
+  and may generate rules that are merged into build files.
+* Dependency resolution: language extensions may translate import strings
+  in source files (for example, a package string in Go or an included file
+  in C) to Bazel labels.
+* Merging: language extensions aren't responsible for merging generated and
+  existing rules, but they must provide metadata used in merging (for example,
+  which attributes are safe to merge).
+
 Configuration
 -------------
 
@@ -90,9 +119,13 @@ For example:
 * The list of directories that Gazelle should update.
 * The path of the repository root directory. Bazel package names are based
   on paths relative to this location.
-* The current import path prefix and the directory where it was set.
+
+Extensions may store additional language-specific information in a map inside
+``Config``. For example:j
+
+* The current Go import path prefix and the directory where it was set.
   Gazelle uses this to infer import paths for ``go_library`` rules.
-* A list of build tags that Gazelle considers to be true on all platforms.
+* A list of Go build tags that Gazelle considers to be true on all platforms.
 
 ``Config`` objects apply to individual directories. Each directory inherits
 the ``Config`` from its parent. Values in a ``Config`` may be modified within
@@ -105,30 +138,22 @@ directive is a special comment formatted like this:
 
 Here are a few examples. See the `full list of directives`_.
 
-* ``# gazelle:prefix`` - sets the Go import path prefix for the current
-  directory.
-* ``# gazelle:build_tags`` - sets the list of build tags which Gazelle considers
-  to be true on all platforms.
-
-There are a few directives which are not applied to the ``Config`` object but
-are interpreted directly in packages where they are relevant.
-
-* ``# gazelle:ignore`` - the build file should not be updated by Gazelle.
-  Gazelle may still index its contents so it can resolve dependencies in other
-  build files.
 * ``# gazelle:exclude path/to/file`` - the named file should not be read by
   Gazelle and should not be included in ``srcs`` lists. If this refers to
   a directory, Gazelle won't recurse into the directory. This directive may
   appear multiple times.
+* ``# gazelle:prefix`` - sets the Go import path prefix for the current
+  directory.
+* ``# gazelle:build_tags`` - sets the list of Go build tags which Gazelle
+  considers to be true on all platforms.
 
 Fixing build files
 ------------------
 
 Godoc: merger_
 
-From time to time, APIs in rules_go are changed or updated. Gazelle helps
-users stay up to date with these changes by automatically fixing deprecated
-usage.
+From time to time, rule APIs are changed or updated. Gazelle helps users stay up
+to date with these changes by automatically fixing deprecated usage.
 
 Minor fixes are applied by Gazelle automatically every time it runs. However,
 some fixes may delete or rename existing rules. Users must run ``gazelle fix``
@@ -148,6 +173,9 @@ for a full list.
 
 Users can prevent Gazelle from modifying rules, attributes, or individual
 values by writing ``# keep`` comments above them.
+
+Currently, all fixes are implemented in language extensions. Some minor
+formatting is also performed with the buildifier library.
 
 Scanning source files
 ---------------------
