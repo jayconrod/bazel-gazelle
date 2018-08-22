@@ -25,14 +25,14 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/internal/rule"
 )
 
-func TestImportDep(t *testing.T) {
-	dir, err := ioutil.TempDir(os.Getenv("TEST_TEMPDIR"), "TestImportDep")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-	lockFilename := filepath.Join(dir, "Gopkg.lock")
-	lockContent := []byte(`
+func TestImports(t *testing.T) {
+	for _, tc := range []struct {
+		desc, filename, content, want string
+	}{
+		{
+			desc:     "dep",
+			filename: "Gopkg.lock",
+			content: `
 # This is an abbreviated version of dep's Gopkg.lock
 # Retrieved 2017-12-20
 
@@ -67,21 +67,8 @@ func TestImportDep(t *testing.T) {
   inputs-digest = "05c1cd69be2c917c0cc4b32942830c2acfa044d8200fdc94716aae48a8083702"
   solver-name = "gps-cdcl"
   solver-version = 1
-`)
-	if err := ioutil.WriteFile(lockFilename, lockContent, 0666); err != nil {
-		t.Fatal(err)
-	}
-
-	rules, err := ImportRepoRules(lockFilename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := rule.EmptyFile("test", "")
-	for _, r := range rules {
-		r.Insert(f)
-	}
-	got := strings.TrimSpace(string(f.Format()))
-	want := strings.TrimSpace(`
+`,
+			want: `
 go_repository(
     name = "com_github_armon_go_radix",
     commit = "4239b77079c7b5d1243b7b4736304ce8ddb6f0f2",
@@ -106,8 +93,50 @@ go_repository(
     commit = "66aacef3dd8a676686c7ae3716979581e8b03c47",
     importpath = "golang.org/x/net",
 )
-`)
-	if got != want {
-		t.Errorf("got %s ; want %s", got, want)
+`,
+		}, {
+			desc:     "modules",
+			filename: "go.mod",
+			content: `
+// This is a modified version of Gazelle's go.mod, retrieved 2018-08-21.
+// It has been modified 
+module github.com/bazelbuild/bazel-gazelle
+
+require (
+	github.com/BurntSushi/toml v0.3.0 // indirect
+	github.com/bazelbuild/buildtools v0.0.0-20180226164855-80c7f0d45d7e
+	github.com/davecgh/go-spew v1.1.0 // indirect
+	github.com/pelletier/go-toml v1.0.1
+	golang.org/x/tools v0.0.0-20170824195420-5d2fd3ccab98
+	gopkg.in/yaml.v2 v2.2.1 // indirect
+)
+`,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			dir, err := ioutil.TempDir(os.Getenv("TEST_TEMPDIR"), "TestImports")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(dir)
+			filename := filepath.Join(dir, tc.filename)
+			if err := ioutil.WriteFile(filename, []byte(tc.content), 0666); err != nil {
+				t.Fatal(err)
+			}
+
+			rules, err := ImportRepoRules(filename)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := rule.EmptyFile("test", "")
+			for _, r := range rules {
+				r.Insert(f)
+			}
+			got := strings.TrimSpace(string(f.Format()))
+			want := strings.TrimSpace(tc.want)
+			if got != want {
+				t.Errorf("got:\n%s\n\nwant:%s\n", got, want)
+			}
+		})
 	}
 }
