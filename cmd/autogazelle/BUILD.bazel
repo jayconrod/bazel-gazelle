@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "autogazelle.go",
+        "client_server_unix.go",
+    ],
+    importpath = "github.com/bazelbuild/bazel-gazelle/cmd/autogazelle",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "autogazelle",
+    embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+)
