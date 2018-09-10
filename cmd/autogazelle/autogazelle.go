@@ -33,6 +33,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -87,7 +88,7 @@ func runGazelle() error {
 			return err
 		}
 		if filepath.Base(path) == "BUILD.bazel.in" {
-			if err := copyFile(filepath.Join(filepath.Dir(path), "BUILD.bazel"), path); err != nil {
+			if err := restoreFile(path, "BUILD.bazel"); err != nil {
 				return err
 			}
 		}
@@ -105,12 +106,14 @@ func runGazelle() error {
 	return cmd.Run()
 }
 
-func copyFile(dest, src string) (err error) {
+func restoreFile(src, base string) (err error) {
 	r, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+
+	dest := filepath.Join(filepath.Dir(src), base)
 	w, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -120,6 +123,16 @@ func copyFile(dest, src string) (err error) {
 			err = cerr
 		}
 	}()
+
+	_, err = fmt.Fprintf(w, `# This file was generated from %s
+# by %s
+# DO NOT EDIT
+
+`, filepath.Base(src), programName)
+	if err != nil {
+		return err
+	}
+
 	_, err = io.Copy(w, r)
 	return err
 }
