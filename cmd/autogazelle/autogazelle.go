@@ -82,28 +82,44 @@ func run() error {
 	}
 }
 
-func runGazelle() error {
+type mode int
+
+const (
+	fullMode mode = iota
+	fastMode
+)
+
+func runGazelle(mode mode, dirs []string) error {
+	bazelPath := os.Getenv("BAZEL_REAL")
+	args := []string{"run", *gazelleLabel, "--", "-index=false"}
+	if mode == fastMode {
+		args = append(args, "-r=false")
+		args = append(args, dirs...)
+	}
+	cmd := exec.Command(bazelPath, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	log.Printf("running gazelle: %s\n", strings.Join(cmd.Args, " "))
+	return cmd.Run()
+}
+
+func restoreFiles() {
 	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			log.Print(err)
+			return nil
 		}
 		if filepath.Base(path) == "BUILD.bazel.in" {
 			if err := restoreFile(path, "BUILD.bazel"); err != nil {
-				return err
+				log.Print(err)
+				return nil
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		log.Print(err)
 	}
-
-	bazelPath := os.Getenv("BAZEL_REAL")
-	cmd := exec.Command(bazelPath, "run", *gazelleLabel)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	log.Printf("running command %s\n", strings.Join(cmd.Args, " "))
-	return cmd.Run()
 }
 
 func restoreFile(src, base string) (err error) {

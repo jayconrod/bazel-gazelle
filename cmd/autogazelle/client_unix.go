@@ -24,6 +24,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -38,7 +39,8 @@ func runClient() error {
 			if err == nil {
 				break
 			}
-			time.Sleep(500 * time.Millisecond)
+			// Wait for server to start listening.
+			time.Sleep(1 * time.Second)
 		}
 		if err != nil {
 			return err
@@ -75,45 +77,12 @@ func startServer() error {
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+	log.Printf("starting server: %s", strings.Join(cmd.Args, " "))
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	if err := cmd.Process.Release(); err != nil {
+		return err
+	}
 	return nil
-}
-
-func runServer() error {
-	log.SetFlags(log.Ldate | log.Ltime)
-	os.Remove(*socketPath)
-	ln, err := net.Listen("unix", *socketPath)
-	if err != nil {
-		return err
-	}
-	uln := ln.(*net.UnixListener)
-	uln.SetUnlinkOnClose(true)
-	defer ln.Close()
-	if err := uln.SetDeadline(time.Now().Add(*serverTimeout)); err != nil {
-		return err
-	}
-	log.Printf("started server with pid %d", os.Getpid())
-
-	for {
-		c, err := ln.Accept()
-		if err != nil {
-			if operr, ok := err.(*net.OpError); ok {
-				if operr.Timeout() {
-					return nil
-				}
-				if operr.Temporary() {
-					log.Printf("temporary error: %v", err)
-					continue
-				}
-			}
-			return err
-		}
-
-		if err := runGazelle(); err != nil {
-			log.Print(err)
-		}
-		c.Close()
-	}
 }
