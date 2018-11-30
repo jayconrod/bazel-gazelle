@@ -93,13 +93,11 @@ func runServer() error {
 	restoreBuildFilesInRepo()
 
 	// Listen for file writes within the repository.
-	cancelWatch, err := watchDir(".", recordWrite)
-	isWatching := err == nil
+	w, err := watchDir(".")
 	if err != nil {
 		log.Print(err)
-	}
-	if isWatching {
-		defer cancelWatch()
+	} else {
+		defer w.close()
 	}
 
 	// Wait for clients to connect. Each time the client connects, we run
@@ -120,8 +118,9 @@ func runServer() error {
 			return err
 		}
 
+		w.setRecordBuildWrites(false)
 		log.SetOutput(io.MultiWriter(c, logFile))
-		dirs := getAndClearWrittenDirs()
+		dirs := w.getAndClearWrittenDirs()
 		for _, dir := range dirs {
 			restoreBuildFilesInDir(dir)
 		}
@@ -129,13 +128,20 @@ func runServer() error {
 			log.Print(err)
 		}
 		log.SetOutput(logFile)
+		w.setRecordBuildWrites(true) // TODO: maybe after a timeout?
 		c.Close()
-		if isWatching {
+		if w != nil {
 			mode = fastMode
 		}
 	}
 }
 
+// watcher monitors a repository for changes.
+//
+// After creating a watcher, the server should call getAndClearWrittenDirs
+// to get a list of directories that have changed since the last call.
+// The server should also call setRecordBuildWrites around invocations
+// to gazelle.
 type watcher struct {
 	w *fsnotify.Watcher
 
@@ -146,6 +152,7 @@ type watcher struct {
 	done chan struct{}
 }
 
+// Creates a new watcher that monitors root and its subdirectories.
 func watchDir(root string) (*watcher, error) {
 	w := &watcher{
 		dirSet: make(map[string]bool),
@@ -175,35 +182,44 @@ func watchDir(root string) (*watcher, error) {
 	return w, nil
 }
 
+// getAndClearWrittenDirs returns a list of directories with files that may
+// have been modified since the last call to getAndClearWrittenDirs or
+// since the watcher was created.
+func (w *watcher) getAndClearWrittenDirs() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	dirs := make([]string, 0, len(w.dirSet))
+	for d := range w.dirSet {
+		dirs = append(dirs, d)
+	}
+	w.dirSet = make(map[string]bool)
+	return dirs
+}
+
+// setRecordBuildWrites sets whether writes to build files count as
+// changes that require gazelle to be run. Writes caused by gazelle itself
+// should not be recorded, so the server should set this to false before
+// invoking gazelle and true after.
+func (w *watcher) setRecordBuildWrites(record bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.shouldRecordBuildWrites = record
+}
+
+// close tells the watcher to stop processing events and release resources.
+func (w *watcher) close() {
+	close(w.done)
+}
+
 func (w *watcher) doWatch() {
 	for {
 		select {
 		case ev := <-w.w.Events:
-			if w.shouldIgnore(ev.Name) {
-				continue
-			}
-			if ev.Op == fsnotify.Create {
-				if st, err := os.Lstat(ev.Name); err != nil {
-					log.Print(err)
-				} else if st.IsDir() {
-					dirs, errs := listDirs(ev.Name)
-					for _, err := range errs {
-						log.Print(err)
-					}
-					for _, dir := range dirs {
-						if err := w.Add(dir); err != nil {
-							log.Print(err)
-						}
-						recordWrite(dir)
-					}
-				}
-			} else {
-				recordWrite(filepath.Dir(ev.Name))
-			}
-		case err := <-w.Errors:
+			w.handleEvent(ev)
+		case err := <-w.w.Errors:
 			log.Print(err)
-		case <-done:
-			if err := w.Close(); err != nil {
+		case <-w.done:
+			if err := w.w.Close(); err != nil {
 				log.Print(err)
 			}
 			return
@@ -211,32 +227,40 @@ func (w *watcher) doWatch() {
 	}
 }
 
-// watchDir listens for file system changes in root and its
-// subdirectories. The record function is called with directories whose
-// contents have changed. New directories are watched recursively.
-// The returned cancel function may be called to stop watching.
-func watchDir(root string, record func(string)) (cancel func(), err error) {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
+func (w *watcher) handleEvent(ev fsnotify.Event) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.shouldIgnore(ev.Name) {
+		return
 	}
-
-	dirs, errs := listDirs(root)
-	for _, err := range errs {
-		log.Print(err)
-	}
-	gitDir := filepath.Join(root, ".git")
-	for _, dir := range dirs {
-		if dir == gitDir {
-			continue
-		}
-		if err := w.Add(dir); err != nil {
+	if ev.Op == fsnotify.Create {
+		if st, err := os.Lstat(ev.Name); err != nil {
 			log.Print(err)
+		} else if st.IsDir() {
+			dirs, errs := listDirs(ev.Name)
+			for _, err := range errs {
+				log.Print(err)
+			}
+			for _, dir := range dirs {
+				if err := w.w.Add(dir); err != nil {
+					log.Print(err)
+				}
+				w.dirSet[dir] = true
+			}
 		}
+	} else {
+		w.dirSet[filepath.Dir(ev.Name)] = true
 	}
+}
 
-	done := make(chan struct{})
-	return func() { close(done) }, nil
+// shouldIgnore returns whether a write to the given file should be ignored
+// because they were caused by gazelle or autogazelle or something unrelated
+// to the build.
+func (w *watcher) shouldIgnore(p string) bool {
+	p = strings.TrimPrefix(filepath.ToSlash(p), "./")
+	base := path.Base(p)
+	return strings.HasPrefix(p, "tools/") || base == ".git" ||
+		(base == "BUILD" || base == "BUILD.bazel") && !w.shouldRecordBuildWrites
 }
 
 // listDirs returns a slice containing all the subdirectories under dir,
@@ -258,39 +282,4 @@ func listDirs(dir string) ([]string, []error) {
 		errs = append(errs, err)
 	}
 	return dirs, errs
-}
-
-// shouldIgnore returns whether a write to the given file should be ignored
-// because they were caused by gazelle or autogazelle or something unrelated
-// to the build.
-func shouldIgnore(p string) bool {
-	p = strings.TrimPrefix(filepath.ToSlash(p), "./")
-	base := path.Base(p)
-	return strings.HasPrefix(p, "tools/") || base == ".git" || base == "BUILD" || base == "BUILD.bazel"
-}
-
-var (
-	dirSetMutex sync.Mutex
-	dirSet      = map[string]bool{}
-)
-
-// recordWrite records that a directory has been modified and that its build
-// file should be updated the next time gazelle runs.
-func recordWrite(path string) {
-	dirSetMutex.Lock()
-	defer dirSetMutex.Unlock()
-	dirSet[path] = true
-}
-
-// getAndClearWrittenDirs retrieves a list of directories that have been
-// modified since the last time getAndClearWrittenDirs was called.
-func getAndClearWrittenDirs() []string {
-	dirSetMutex.Lock()
-	defer dirSetMutex.Unlock()
-	dirs := make([]string, 0, len(dirSet))
-	for d := range dirSet {
-		dirs = append(dirs, d)
-	}
-	dirSet = make(map[string]bool)
-	return dirs
 }
