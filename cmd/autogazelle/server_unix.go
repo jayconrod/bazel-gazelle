@@ -136,6 +136,81 @@ func runServer() error {
 	}
 }
 
+type watcher struct {
+	w *fsnotify.Watcher
+
+	mu                      sync.Mutex
+	dirSet                  map[string]bool
+	shouldRecordBuildWrites bool
+
+	done chan struct{}
+}
+
+func watchDir(root string) (*watcher, error) {
+	w := &watcher{
+		dirSet: make(map[string]bool),
+		done:   make(chan struct{}),
+	}
+	var err error
+	w.w, err = fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+
+	dirs, errs := listDirs(root)
+	for _, err := range errs {
+		log.Print(err)
+	}
+	gitDir := filepath.Join(root, ".git")
+	for _, dir := range dirs {
+		if dir == gitDir {
+			continue
+		}
+		if err := w.w.Add(dir); err != nil {
+			log.Print(err)
+		}
+	}
+
+	go w.doWatch()
+	return w, nil
+}
+
+func (w *watcher) doWatch() {
+	for {
+		select {
+		case ev := <-w.w.Events:
+			if w.shouldIgnore(ev.Name) {
+				continue
+			}
+			if ev.Op == fsnotify.Create {
+				if st, err := os.Lstat(ev.Name); err != nil {
+					log.Print(err)
+				} else if st.IsDir() {
+					dirs, errs := listDirs(ev.Name)
+					for _, err := range errs {
+						log.Print(err)
+					}
+					for _, dir := range dirs {
+						if err := w.Add(dir); err != nil {
+							log.Print(err)
+						}
+						recordWrite(dir)
+					}
+				}
+			} else {
+				recordWrite(filepath.Dir(ev.Name))
+			}
+		case err := <-w.Errors:
+			log.Print(err)
+		case <-done:
+			if err := w.Close(); err != nil {
+				log.Print(err)
+			}
+			return
+		}
+	}
+}
+
 // watchDir listens for file system changes in root and its
 // subdirectories. The record function is called with directories whose
 // contents have changed. New directories are watched recursively.
@@ -161,41 +236,6 @@ func watchDir(root string, record func(string)) (cancel func(), err error) {
 	}
 
 	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case ev := <-w.Events:
-				if shouldIgnore(ev.Name) {
-					continue
-				}
-				if ev.Op == fsnotify.Create {
-					if st, err := os.Lstat(ev.Name); err != nil {
-						log.Print(err)
-					} else if st.IsDir() {
-						dirs, errs := listDirs(ev.Name)
-						for _, err := range errs {
-							log.Print(err)
-						}
-						for _, dir := range dirs {
-							if err := w.Add(dir); err != nil {
-								log.Print(err)
-							}
-							recordWrite(dir)
-						}
-					}
-				} else {
-					recordWrite(filepath.Dir(ev.Name))
-				}
-			case err := <-w.Errors:
-				log.Print(err)
-			case <-done:
-				if err := w.Close(); err != nil {
-					log.Print(err)
-				}
-				return
-			}
-		}
-	}()
 	return func() { close(done) }, nil
 }
 
