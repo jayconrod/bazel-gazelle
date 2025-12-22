@@ -11,6 +11,9 @@ go_library(
     srcs = ["forward.go"],
     importpath = "github.com/bazelbuild/bazel-gazelle/tools/forward",
     visibility = ["//visibility:private"],
+    deps = [
+        "//rule",
+    ],
 )
 
 filegroup(

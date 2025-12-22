@@ -2,61 +2,257 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 
 func main() {
-	if wd := os.Getenv("BUILD_WORKING_DIRECTORY"); wd != "" {
-		if err := os.Chdir(wd); err != nil {
+	wd := os.Getenv("BUILD_WORKING_DIRECTORY")
+	if wd == "" {
+		var err error
+		wd, err = os.Getwd()
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
-	if err := run(os.Args); err != nil {
+	if err := run(wd, os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(wd string, args []string) error {
 	flags := flag.NewFlagSet("forward", flag.ContinueOnError)
-	var targetPkg string
-	flags.StringVar(&targetPkg, "p", "", "location of package to generate shim for")
 	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: forward -p <directory>\n")
+		fmt.Fprintf(os.Stderr, "Usage: forward directories...\n")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if targetPkg == "" {
-		return fmt.Errorf("target package -p not set")
+	if flags.NArg() == 0 {
+		return fmt.Errorf("no directories given")
 	}
-	dirs := flags.Args()
-	if len(dirs) == 0 {
-		return fmt.Errorf("no directories specified")
+	shimDirs := flags.Args()
+
+	modRootDir, err := findModRoot(wd)
+	if err != nil {
+		return err
 	}
 
-	for _, dir := range dirs {
-		if err := forwardPackage(targetPkg, dir); err != nil {
+	for _, dir := range shimDirs {
+		shimDir := filepath.Join(wd, dir)
+		shimRel, err := filepath.Rel(modRootDir, shimDir)
+		if err != nil {
+			return err
+		}
+		shimRel = filepath.ToSlash(shimRel)
+		shimPkg := path.Join("github.com/bazelbuild/bazel-gazelle", shimRel)
+
+		destDir := filepath.Join(modRootDir, "v2", shimRel)
+		destPkg := path.Join("github.com/bazel-contrib/bazel-gazelle/v2", shimRel)
+
+		if err := copyDir(shimDir, destDir); err != nil {
+			return err
+		}
+
+		if err := updateDestBuildFile(destDir, destPkg); err != nil {
+			return err
+		}
+
+		if err := forwardPackage(shimDir, destPkg); err != nil {
+			return err
+		}
+
+		if err := updateAllImports(modRootDir, shimPkg, destPkg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func updateAllImports(root, shimPkg, destPkg string) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		return rewriteImportsInFile(path, shimPkg, destPkg)
+	})
+}
+
+func rewriteImportsInFile(path, shimPkg, destPkg string) error {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+
+	changed := false
+	for _, imp := range f.Imports {
+		// imp.Path.Value is quoted, e.g. "\"example.com/old\""
+		val := strings.Trim(imp.Path.Value, "\"")
+		if val == shimPkg {
+			imp.Path.Value = fmt.Sprintf("\"%s\"", destPkg)
+			changed = true
+		}
+	}
+
+	if changed {
+		var buf bytes.Buffer
+		if err := printer.Fprint(&buf, fset, f); err != nil {
+			return err
+		}
+		formatted, err := format.Source(buf.Bytes())
+		if err != nil {
+			return fmt.Errorf("formatting rewritten file %s: %w", path, err)
+		}
+		if err := os.WriteFile(path, formatted, 0666); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func forwardPackage(targetPkg, dir string) error {
+func findModRoot(dir string) (string, error) {
+	for {
+		goModPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(goModPath); err == nil {
+			return dir, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(dir)
+		if dir == parent {
+			return "", fmt.Errorf("could not locate go.mod in any parent directory")
+		}
+		dir = parent
+	}
+}
+
+func copyDir(src, dst string) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("copying %s to %s: %w", src, dst, err)
+		}
+	}()
+
+	// If dst doesn't exist, create it
+	if err := os.MkdirAll(dst, 0777); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// Recursive copy
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// Copy file
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("copying %s to %s: %w", dst, dst, err)
+		}
+	}()
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := out.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func updateDestBuildFile(dir, targetPkg string) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("updating BUILD file in %s: %w", dir, err)
+		}
+	}()
+
+	buildPath := filepath.Join(dir, "BUILD.bazel")
+	if _, err := os.Stat(buildPath); os.IsNotExist(err) {
+		buildPath = filepath.Join(dir, "BUILD")
+		if _, err := os.Stat(buildPath); os.IsNotExist(err) {
+			return nil
+		}
+	}
+
+	f, err := rule.LoadFile(buildPath, "")
+	if err != nil {
+		return err
+	}
+
+	// Identify aliases to delete (specifically name="go_default_library")
+	for _, r := range f.Rules {
+		if r.Kind() == "alias" && r.Name() == "go_default_library" {
+			r.Delete()
+		}
+		if kind := r.Kind(); kind == "go_library" || kind == "go_binary" || kind == "go_test" {
+			if r.Attr("importpath") != nil {
+				r.SetAttr("importpath", targetPkg)
+			}
+		}
+	}
+
+	return f.Save(buildPath)
+}
+
+func forwardPackage(dir, targetPkg string) error {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -82,7 +278,7 @@ func forwardPackage(targetPkg, dir string) error {
 
 	for _, pkg := range pkgs {
 		for filename, file := range pkg.Files {
-			if err := forwardFile(fset, filename, file, targetPkg); err != nil {
+			if err := forwardFile(file, fset, filename, targetPkg); err != nil {
 				return fmt.Errorf("failed to process %s: %v", filename, err)
 			}
 		}
@@ -91,31 +287,50 @@ func forwardPackage(targetPkg, dir string) error {
 	return nil
 }
 
-func forwardFile(fset *token.FileSet, path string, f *ast.File, targetPkg string) error {
+func forwardFile(f *ast.File, fset *token.FileSet, filename, targetPkg string) error {
 	var buf bytes.Buffer
 
-	// Preserve build constraints (comments before package decl)
+	// Preserve build constraints and copyright headers (comments before package decl)
+	// using AST positions to preserve vertical spacing.
+	lastLine := 1
 	for _, group := range f.Comments {
-		if group.Pos() < f.Package {
-			for _, comment := range group.List {
-				// Simple heuristic for build tags or copyright headers
-				// We keep everything before package decl just in case
-				buf.WriteString(comment.Text + "\n")
-			}
+		if group.Pos() >= f.Package {
+			break
 		}
+
+		// Calculate newlines before this group
+		groupLine := fset.Position(group.Pos()).Line
+		newlines := groupLine - lastLine
+		for i := 0; i < newlines; i++ {
+			buf.WriteString("\n")
+		}
+
+		// Print the comment group
+		for _, comment := range group.List {
+			buf.WriteString(comment.Text + "\n")
+		}
+
+		lastLine = fset.Position(group.End()).Line + 1
+	}
+
+	// Calculate newlines before package declaration
+	pkgLine := fset.Position(f.Package).Line
+	newlines := pkgLine - lastLine
+	for i := 0; i < newlines; i++ {
+		buf.WriteString("\n")
 	}
 
 	pkgName := f.Name.Name
 	if pkgName == "main" {
-		log.Printf("Skipping main package file: %s", path)
+		log.Printf("Skipping main package file: %s", filename)
 		return nil
 	}
 
 	buf.WriteString(fmt.Sprintf("package %s\n\n", pkgName))
 
 	// Import the target package with a specific alias to avoid collisions
-	destAlias := "shim_pkg"
-	buf.WriteString(fmt.Sprintf("import %s \"%s\"\n", destAlias, targetPkg))
+	targetName := "v2"
+	buf.WriteString(fmt.Sprintf("import %s \"%s\"\n", targetName, targetPkg))
 
 	// Preserve original imports to ensure types used in signatures can be resolved.
 	// goimports will remove any that end up being unused.
@@ -142,7 +357,7 @@ func forwardFile(fset *token.FileSet, path string, f *ast.File, targetPkg string
 					if s.Name.IsExported() {
 						writeDoc(&buf, d.Doc, targetPkg, s.Name.Name)
 						// type T = dest.T
-						buf.WriteString(fmt.Sprintf("type %s = %s.%s\n\n", s.Name.Name, destAlias, s.Name.Name))
+						buf.WriteString(fmt.Sprintf("type %s = %s.%s\n\n", s.Name.Name, targetName, s.Name.Name))
 					}
 				case *ast.ValueSpec:
 					for _, name := range s.Names {
@@ -153,7 +368,7 @@ func forwardFile(fset *token.FileSet, path string, f *ast.File, targetPkg string
 								kind = "const"
 							}
 							// var V = dest.V or const C = dest.C
-							buf.WriteString(fmt.Sprintf("%s %s = %s.%s\n\n", kind, name.Name, destAlias, name.Name))
+							buf.WriteString(fmt.Sprintf("%s %s = %s.%s\n\n", kind, name.Name, targetName, name.Name))
 						}
 					}
 				}
@@ -178,9 +393,9 @@ func forwardFile(fset *token.FileSet, path string, f *ast.File, targetPkg string
 
 				// Return?
 				if d.Type.Results != nil && len(d.Type.Results.List) > 0 {
-					buf.WriteString(fmt.Sprintf("\treturn %s.%s(%s)\n", destAlias, d.Name.Name, args))
+					buf.WriteString(fmt.Sprintf("\treturn %s.%s(%s)\n", targetName, d.Name.Name, args))
 				} else {
-					buf.WriteString(fmt.Sprintf("\t%s.%s(%s)\n", destAlias, d.Name.Name, args))
+					buf.WriteString(fmt.Sprintf("\t%s.%s(%s)\n", targetName, d.Name.Name, args))
 				}
 				buf.WriteString("}\n\n")
 			}
@@ -188,15 +403,14 @@ func forwardFile(fset *token.FileSet, path string, f *ast.File, targetPkg string
 	}
 
 	// Write back
-	if err := os.WriteFile(path, buf.Bytes(), 0666); err != nil {
+	if err := os.WriteFile(filename, buf.Bytes(), 0666); err != nil {
 		return err
 	}
 
-	// Run goimports
-	cmd := exec.Command("goimports", "-w", path)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		// Just warn, don't fail, maybe goimports is not installed or syntax error (unlikely)
-		log.Printf("Warning: goimports failed on %s: %v\nOutput: %s", path, err, out)
+	// Run goimports to remove unused imports and format
+	cmd := exec.Command("goimports", "-w", filename)
+	if err := cmd.Run(); err != nil {
+		return err
 	}
 
 	return nil
