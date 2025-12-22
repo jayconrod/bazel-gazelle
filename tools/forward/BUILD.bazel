@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_binary(
+    name = "forward",
+    embed = [":forward_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "forward_lib",
+    srcs = ["forward.go"],
+    importpath = "github.com/bazelbuild/bazel-gazelle/tools/forward",
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = [
+        "BUILD.bazel",
+        "forward.go",
+    ],
+    visibility = ["//visibility:public"],
+)
