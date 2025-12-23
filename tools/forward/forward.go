@@ -203,12 +203,62 @@ func copyDir(src, dst string) (err error) {
 			}
 		} else {
 			// Copy file
-			if err := copyFile(srcPath, dstPath); err != nil {
-				return err
+			if strings.HasSuffix(entry.Name(), ".go") {
+				if err := copyGoFile(srcPath, dstPath); err != nil {
+					return err
+				}
+			} else {
+				if err := copyFile(srcPath, dstPath); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func copyGoFile(src, dst string) (err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("copying go file %s to %s: %w", src, dst, err)
+		}
+	}()
+
+	// Read source
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, src, nil, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+
+	// Rewrite imports
+	// Replace "github.com/bazelbuild/bazel-gazelle/internal/..."
+	// with "github.com/bazel-contrib/bazel-gazelle/v2/internal/..."
+	oldPrefix := "github.com/bazelbuild/bazel-gazelle/internal/"
+	newPrefix := "github.com/bazel-contrib/bazel-gazelle/v2/internal/"
+
+	for _, imp := range f.Imports {
+		if imp.Path == nil {
+			continue
+		}
+		pkg := strings.Trim(imp.Path.Value, "\"")
+		if withoutPrefix, ok := strings.CutPrefix(pkg, oldPrefix); ok {
+			imp.Path.Value = fmt.Sprintf(`"%s%s"`, newPrefix, withoutPrefix)
+		}
+	}
+
+	// Format and write
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, f); err != nil {
+		return err
+	}
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("formatting: %w", err)
+	}
+
+	return os.WriteFile(dst, formatted, 0666)
 }
 
 func copyFile(src, dst string) (err error) {
