@@ -12,7 +12,7 @@ go_bazel_test(
     rule_files = [
         "//:all_files",
     ],
-    deps = ["//testtools"],
+    deps = ["//v2/testtools"],
 )
 
 gazelle_binary_test_suite()
