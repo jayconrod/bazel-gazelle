@@ -439,8 +439,11 @@ func writeDoc(buf *bytes.Buffer, doc *ast.CommentGroup, targetPkg, name string) 
 		for _, c := range doc.List {
 			buf.WriteString(c.Text + "\n")
 		}
+		if len(doc.List) > 0 {
+			buf.WriteString("//\n")
+		}
 	}
-	buf.WriteString(fmt.Sprintf("//\n// Deprecated: Use %s.%s instead.\n", targetPkg, name))
+	fmt.Fprintf(buf, "// Deprecated: Use %s.%s instead.\n", targetPkg, name)
 }
 
 func formatCallArgs(params *ast.FieldList) string {
