@@ -28,9 +28,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
-	"github.com/bazelbuild/bazel-gazelle/testtools"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -2505,7 +2505,7 @@ my_custom_macro(
 `,
 				},
 				{
-					Path:    "file.go",
+					Path: "file.go",
 					Content: `
 package aliaskind
 
@@ -2562,7 +2562,7 @@ my_custom_macro(
 `,
 				},
 				{
-					Path:    "file.go",
+					Path: "file.go",
 					Content: `
 package aliaskind
 
@@ -2596,15 +2596,15 @@ my_custom_macro(
 				},
 			},
 		},
-			"existing aliased kind is indexed for deps": {
-				index: true,
-				before: []testtools.FileSpec{
-					{
-						Path: "WORKSPACE",
-					},
-					{
-						Path: "BUILD.bazel",
-						Content: `
+		"existing aliased kind is indexed for deps": {
+			index: true,
+			before: []testtools.FileSpec{
+				{
+					Path: "WORKSPACE",
+				},
+				{
+					Path: "BUILD.bazel",
+					Content: `
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 # gazelle:prefix example.com/aliaskind
 # gazelle:go_naming_convention go_default_library
@@ -2617,10 +2617,10 @@ go_library(
     visibility = ["//visibility:public"],
 )
 			`,
-					},
-					{
-						Path:    "file.go",
-						Content: `
+				},
+				{
+					Path: "file.go",
+					Content: `
 package aliaskind
 
 import (
@@ -2628,10 +2628,10 @@ import (
 	_ "github.com/external"
 )
 			`,
-					},
-					{
-						Path: "foo/BUILD.bazel",
-						Content: `
+				},
+				{
+					Path: "foo/BUILD.bazel",
+					Content: `
 load("//custom:def.bzl", "my_custom_macro")
 
 my_custom_macro(
@@ -2641,16 +2641,16 @@ my_custom_macro(
     visibility = ["//visibility:public"],
 )
 			`,
-					},
-					{
-						Path:    "foo/foo.go",
-						Content: "package foo",
-					},
 				},
-				after: []testtools.FileSpec{
-					{
-						Path: "BUILD.bazel",
-						Content: `
+				{
+					Path:    "foo/foo.go",
+					Content: "package foo",
+				},
+			},
+			after: []testtools.FileSpec{
+				{
+					Path: "BUILD.bazel",
+					Content: `
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 # gazelle:prefix example.com/aliaskind
 # gazelle:go_naming_convention go_default_library
@@ -2667,9 +2667,9 @@ go_library(
     ],
 )
 			`,
-					},
 				},
 			},
+		},
 		"alias_kind around a mapped_kind": {
 			index: false,
 			before: []testtools.FileSpec{
@@ -2694,7 +2694,7 @@ my_custom_macro(
 `,
 				},
 				{
-					Path:    "file.go",
+					Path: "file.go",
 					Content: `
 package aliaskind
 

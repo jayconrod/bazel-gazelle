@@ -61,7 +61,7 @@ go_test(
     deps = [
         "//config",
         "//internal/wspace",
-        "//testtools",
+        "//v2/testtools",
         "@com_github_google_go_cmp//cmp",
         "@io_bazel_rules_go//go/runfiles",
     ],
