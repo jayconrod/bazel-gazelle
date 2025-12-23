@@ -29,8 +29,8 @@ import (
 	"testing"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
-	"github.com/bazelbuild/bazel-gazelle/testtools"
 	"github.com/google/go-cmp/cmp"
 )
 

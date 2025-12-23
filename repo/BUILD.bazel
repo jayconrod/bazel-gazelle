@@ -26,9 +26,9 @@ go_test(
     ],
     embed = [":repo"],
     deps = [
-        "//testtools",
         "//v2/pathtools",
         "//v2/rule",
+        "//v2/testtools",
         "@org_golang_x_tools_go_vcs//:vcs",
     ],
 )

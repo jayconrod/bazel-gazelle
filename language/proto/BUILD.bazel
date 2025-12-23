@@ -80,12 +80,12 @@ go_test(
     deps = [
         "//language",
         "//repo",
-        "//testtools",
         "//v2/config",
         "//v2/label",
         "//v2/merger",
         "//v2/resolve",
         "//v2/rule",
+        "//v2/testtools",
         "//walk",
         "@com_github_bazelbuild_buildtools//build",
     ],

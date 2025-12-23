@@ -32,7 +32,7 @@ go_test(
     embed = [":gazellebinarytest"],
     rundir = ".",
     deps = [
-        "//testtools",
+        "//v2/testtools",
         "@io_bazel_rules_go//go/tools/bazel",
     ],
 )

@@ -23,9 +23,9 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
+	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/testtools"
 )
 
 func TestImports(t *testing.T) {

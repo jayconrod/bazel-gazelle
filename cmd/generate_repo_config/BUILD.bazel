@@ -21,7 +21,7 @@ go_test(
     name = "generate_repo_config_test",
     srcs = ["main_test.go"],
     embed = [":generate_repo_config_lib"],
-    deps = ["//testtools"],
+    deps = ["//v2/testtools"],
 )
 
 filegroup(

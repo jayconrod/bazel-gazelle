@@ -23,7 +23,7 @@ go_test(
     name = "move_labels_test",
     srcs = ["main_test.go"],
     embed = [":move_labels_lib"],
-    deps = ["//testtools"],
+    deps = ["//v2/testtools"],
 )
 
 filegroup(
