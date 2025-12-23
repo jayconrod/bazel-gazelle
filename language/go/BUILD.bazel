@@ -93,12 +93,12 @@ go_test(
     deps = [
         "//language",
         "//language/proto",
-        "//merger",
         "//repo",
         "//resolve",
         "//testtools",
         "//v2/config",
         "//v2/label",
+        "//v2/merger",
         "//v2/pathtools",
         "//v2/rule",
         "//walk",

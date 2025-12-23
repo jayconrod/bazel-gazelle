@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/merger"
 	bzl "github.com/bazelbuild/buildtools/build"
 	"github.com/google/go-cmp/cmp"
 )

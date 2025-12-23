@@ -11,11 +11,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//language",
-        "//merger",
         "//repo",
         "//resolve",
         "//v2/config",
         "//v2/label",
+        "//v2/merger",
         "//v2/rule",
     ],
 )
