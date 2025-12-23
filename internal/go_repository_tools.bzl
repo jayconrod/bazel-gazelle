@@ -43,33 +43,12 @@ def _go_repository_tools_impl(ctx):
     for src in ctx.attr._go_repository_tools_srcs:
         watch(ctx, src)
 
-    # Create a GOPATH with three elements:
-    # - gazelle v1
-    # - gazelle v2 (different module path, aside from the v2 suffix)
-    # - vendored packages, to be shared by both
     env = read_cache_env(ctx, str(ctx.path(ctx.attr.go_cache)))
     extension = executable_extension(ctx)
     go_tool = env["GOROOT"] + "/bin/go" + extension
     watch(ctx, go_tool)
 
-    repo_root_dir = ctx.path(Label("//:WORKSPACE")).dirname
-    ctx.symlink(
-        repo_root_dir,
-        "gazelle_v1/src/github.com/bazelbuild/bazel-gazelle",
-    )
-    ctx.symlink(
-        str(repo_root_dir) + "/v2",
-        "gazelle_v2/src/github.com/bazel-contrib/bazel-gazelle/v2",
-    )
-    ctx.symlink(
-        str(repo_root_dir) + "/vendor",
-        "third_party/src",
-    )
-    gopath = [str(ctx.path(d)) for d in ["gazelle_v1", "gazelle_v2", "third_party"]]
-
     env.update({
-        "GOPATH": path_list_separator(ctx).join(gopath),
-        "GO111MODULE": "off",
         # workaround: avoid the Go SDK paths from leaking into the binary
         "GOROOT_FINAL": "GOROOT",
         # workaround: avoid cgo paths in /tmp leaking into binary
@@ -81,6 +60,9 @@ def _go_repository_tools_impl(ctx):
         env["PATH"] = ctx.os.environ["PATH"]
     if "GOPROXY" in ctx.os.environ:
         env["GOPROXY"] = ctx.os.environ["GOPROXY"]
+
+    bin_dir = str(ctx.path("bin"))
+    gazelle_dir = str(ctx.path(Label("//:WORKSPACE")).dirname)
 
     # Make sure the list of source is up to date.
     # We don't want to run the script, then resolve each source file it returns.
@@ -95,7 +77,7 @@ def _go_repository_tools_impl(ctx):
                 go_tool,
                 "run",
                 ctx.path(ctx.attr._list_repository_tools_srcs),
-                "-dir=gazelle_v1/src/github.com/bazelbuild/bazel-gazelle",
+                "-dir=" + gazelle_dir,
                 "-check=internal/go_repository_tools_srcs.bzl",
             ],
             environment = env,
@@ -108,18 +90,18 @@ def _go_repository_tools_impl(ctx):
     args = [
         go_tool,
         "build",
-        "-o=bin",
+        "-mod=readonly",
+        "-o",
+        bin_dir,
         "-ldflags",
         "-w -s",
         "-gcflags",
-        "all=-trimpath=" + env["GOPATH"],
-        "-asmflags",
-        "all=-trimpath=" + env["GOPATH"],
+        "-trimpath",
         "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
         "github.com/bazelbuild/bazel-gazelle/cmd/fetch_repo",
         "github.com/bazelbuild/bazel-gazelle/cmd/generate_repo_config",
     ]
-    result = env_execute(ctx, args, environment = env)
+    result = env_execute(ctx, args, environment = env, working_directory = gazelle_dir)
     if result.return_code:
         fail("failed to build tools: " + result.stderr)
 

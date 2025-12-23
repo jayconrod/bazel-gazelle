@@ -71,7 +71,7 @@ filegroup(
     name = "all_files",
     testonly = True,
     # keep
-    srcs = glob(["vendor/**"]) + [
+    srcs = [
         ".bazelrc",
         ".gitignore",
         "AUTHORS",
