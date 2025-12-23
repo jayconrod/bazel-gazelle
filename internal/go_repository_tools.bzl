@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"Module providing the go_repository_tools internal rule."
+
 load("//internal:common.bzl", "env_execute", "executable_extension", "watch")
 load("//internal:go_repository_cache.bzl", "read_cache_env")
 load("//internal:go_repository_tools_srcs.bzl", "GO_REPOSITORY_TOOLS_SRCS")
@@ -47,9 +49,14 @@ def _go_repository_tools_impl(ctx):
     go_tool = env["GOROOT"] + "/bin/go" + extension
     watch(ctx, go_tool)
 
+    repo_root_dir = ctx.path(Label("//:WORKSPACE")).dirname
     ctx.symlink(
-        ctx.path(Label("//:WORKSPACE")).dirname,
+        repo_root_dir,
         "src/github.com/bazelbuild/bazel-gazelle",
+    )
+    ctx.symlink(
+        str(repo_root_dir) + "/v2",
+        "src/github.com/bazel-contrib/bazel-gazelle/v2",
     )
 
     env.update({
@@ -120,6 +127,7 @@ def _go_repository_tools_impl(ctx):
     )
     if hasattr(ctx, "repo_metadata"):
         return ctx.repo_metadata(reproducible = True)
+    return None
 
 go_repository_tools = repository_rule(
     _go_repository_tools_impl,
@@ -140,12 +148,11 @@ go_repository_tools = repository_rule(
         "GOPATH",
         "GO_REPOSITORY_USE_HOST_CACHE",
     ],
-)
-"""go_repository_tools is a synthetic repository used by go_repository.
-
+    doc = """go_repository_tools is a synthetic repository used by go_repository.
 
 go_repository depends on two Go binaries: fetch_repo and gazelle. We can't
 build these with Bazel inside a repository rule, and we don't want to manage
 prebuilt binaries, so we build them in here with go build, using whichever
 SDK rules_go is using.
-"""
+""",
+)
