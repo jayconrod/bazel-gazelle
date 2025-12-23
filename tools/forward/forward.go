@@ -87,6 +87,15 @@ func run(wd string, args []string) error {
 		}
 	}
 
+	// Run gazelle to fix dependencies
+	cmd := exec.Command("gazelle", "-bzlmod", "-external=static")
+	cmd.Dir = modRootDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("running gazelle: %w", err)
+	}
+
 	return nil
 }
 
