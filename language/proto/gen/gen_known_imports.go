@@ -42,7 +42,7 @@ var knownImportsTpl = template.Must(template.New("known_imports.go").Parse(`
 
 package {{.Package}}
 
-import "github.com/bazelbuild/bazel-gazelle/label"
+import "github.com/bazel-contrib/bazel-gazelle/v2/label"
 
 var {{.Var}} = map[string]label.Label{
 {{- range .Bindings}}
