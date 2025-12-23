@@ -8,6 +8,7 @@ filegroup(
         "BUILD.bazel",
         "go.mod",
         "//v2/flag:all_files",
+        "//v2/internal:all_files",
     ],
     visibility = ["//visibility:public"],
 )
