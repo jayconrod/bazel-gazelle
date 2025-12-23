@@ -34,7 +34,6 @@ GO_REPOSITORY_TOOLS_SRCS = [
     Label("//config:constants.go"),
     Label("//flag:BUILD.bazel"),
     Label("//flag:flag.go"),
-    Label("//hack:BUILD.bazel"),
     Label("//internal:BUILD.bazel"),
     Label("//internal/bzlmod:BUILD.bazel"),
     Label("//internal/bzlmod/tools:BUILD.bazel"),

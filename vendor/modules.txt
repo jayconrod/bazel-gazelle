@@ -80,3 +80,4 @@ google.golang.org/protobuf/runtime/protoiface
 google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/descriptorpb
 google.golang.org/protobuf/types/gofeaturespb
+# github.com/bazel-contrib/bazel-gazelle/v2 => ./v2
