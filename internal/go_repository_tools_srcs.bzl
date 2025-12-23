@@ -144,6 +144,8 @@ GO_REPOSITORY_TOOLS_SRCS = [
     Label("//v2/internal/module:module.go"),
     Label("//v2/internal/version:BUILD.bazel"),
     Label("//v2/internal/version:version.go"),
+    Label("//v2/internal/wspace:BUILD.bazel"),
+    Label("//v2/internal/wspace:finder.go"),
     Label("//walk:BUILD.bazel"),
     Label("//walk:cache.go"),
     Label("//walk:config.go"),

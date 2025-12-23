@@ -5,6 +5,7 @@ filegroup(
         "BUILD.bazel",
         "//v2/internal/module:all_files",
         "//v2/internal/version:all_files",
+        "//v2/internal/wspace:all_files",
     ],
     visibility = ["//visibility:public"],
 )
