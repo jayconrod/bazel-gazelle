@@ -41,8 +41,8 @@ func main() {
 
 func run(wd string, args []string) error {
 	flags := flag.NewFlagSet("forward", flag.ContinueOnError)
-	var internal bool
-	flags.BoolVar(&internal, "internal", false, "moves the package to an internal directory")
+	var shim bool
+	flags.BoolVar(&shim, "shim", false, "whether to replace the original package with shims")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: forward directories...\n")
 		flags.PrintDefaults()
@@ -53,45 +53,40 @@ func run(wd string, args []string) error {
 	if flags.NArg() == 0 {
 		return fmt.Errorf("no directories given")
 	}
-	shimDirs := flags.Args()
+	srcDirs := flags.Args()
 
 	modRootDir, err := findModRoot(wd)
 	if err != nil {
 		return err
 	}
 
-	for _, dir := range shimDirs {
-		shimDir := filepath.Join(wd, dir)
-		shimRel, err := filepath.Rel(modRootDir, shimDir)
+	for _, dir := range srcDirs {
+		srcDir := filepath.Join(wd, dir)
+		srcRel, err := filepath.Rel(modRootDir, srcDir)
 		if err != nil {
 			return err
 		}
-		shimRel = filepath.ToSlash(shimRel)
-		shimPkg := path.Join("github.com/bazelbuild/bazel-gazelle", shimRel)
+		srcRel = filepath.ToSlash(srcRel)
+		srcPkg := path.Join("github.com/bazelbuild/bazel-gazelle", srcRel)
 
-		var destDir, destPkg string
-		if internal {
-			destDir = filepath.Join(modRootDir, "v2/internal", shimRel)
-			destPkg = path.Join("github.com/bazel-contrib/bazel-gazelle/v2/internal", shimRel)
-		} else {
-			destDir = filepath.Join(modRootDir, "v2", shimRel)
-			destPkg = path.Join("github.com/bazel-contrib/bazel-gazelle/v2", shimRel)
-		}
+		dstDir := filepath.Join(modRootDir, "v2", srcRel)
+		dstPkg := path.Join("github.com/bazel-contrib/bazel-gazelle/v2", srcRel)
 
-		if err := copyDir(shimDir, destDir); err != nil {
+		if err := copyDir(srcDir, dstDir); err != nil {
 			return err
 		}
 
-		if err := updateDestBuildFile(destDir, destPkg); err != nil {
+		if err := updateDstBuildFile(dstDir, dstPkg); err != nil {
 			return err
 		}
 
-		if err := forwardPackage(shimDir, destPkg); err != nil {
-			return err
-		}
-
-		if err := updateAllImports(modRootDir, shimPkg, destPkg); err != nil {
-			return err
+		if shim {
+			if err := shimPackage(srcDir, dstPkg); err != nil {
+				return err
+			}
+			if err := rewriteAllImports(modRootDir, srcPkg, dstPkg); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -116,7 +111,7 @@ func run(wd string, args []string) error {
 	return nil
 }
 
-func updateAllImports(root, shimPkg, destPkg string) error {
+func rewriteAllImports(root, srcPkg, dstPkg string) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -127,7 +122,7 @@ func updateAllImports(root, shimPkg, destPkg string) error {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		return rewriteImportsInFile(path, shimPkg, destPkg)
+		return rewriteImportsInFile(path, srcPkg, dstPkg)
 	})
 }
 
@@ -243,7 +238,7 @@ func copyFile(src, dst string) (err error) {
 	return err
 }
 
-func updateDestBuildFile(dir, targetPkg string) (err error) {
+func updateDstBuildFile(dir, dstPkg string) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("updating BUILD file in %s: %w", dir, err)
@@ -270,7 +265,7 @@ func updateDestBuildFile(dir, targetPkg string) (err error) {
 		}
 		if kind := r.Kind(); kind == "go_library" || kind == "go_binary" || kind == "go_test" {
 			if r.Attr("importpath") != nil {
-				r.SetAttr("importpath", targetPkg)
+				r.SetAttr("importpath", dstPkg)
 			}
 		}
 	}
@@ -278,7 +273,7 @@ func updateDestBuildFile(dir, targetPkg string) (err error) {
 	return f.Save(buildPath)
 }
 
-func forwardPackage(dir, targetPkg string) error {
+func shimPackage(dir, shimPkg string) error {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
 		return !strings.HasSuffix(fi.Name(), "_test.go")
@@ -304,7 +299,7 @@ func forwardPackage(dir, targetPkg string) error {
 
 	for _, pkg := range pkgs {
 		for filename, file := range pkg.Files {
-			if err := forwardFile(file, fset, filename, targetPkg); err != nil {
+			if err := shimFile(file, fset, filename, shimPkg); err != nil {
 				return fmt.Errorf("failed to process %s: %v", filename, err)
 			}
 		}
@@ -313,7 +308,7 @@ func forwardPackage(dir, targetPkg string) error {
 	return nil
 }
 
-func forwardFile(f *ast.File, fset *token.FileSet, filename, targetPkg string) error {
+func shimFile(f *ast.File, fset *token.FileSet, filename, targetPkg string) error {
 	var buf bytes.Buffer
 
 	// Preserve build constraints and copyright headers (comments before package decl)
