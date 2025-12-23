@@ -16,10 +16,10 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/internal/gazellebinarytest",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//config",
         "//language",
         "//repo",
         "//resolve",
+        "//v2/config",
         "//v2/label",
         "//v2/rule",
     ],

@@ -15,13 +15,10 @@ limitations under the License.
 
 package config
 
-const (
-	// RulesGoRepoName is the canonical name of the rules_go repository. It must
-	// match the workspace name in WORKSPACE.
-	// TODO(jayconrod): move to language/go.
-	RulesGoRepoName = "io_bazel_rules_go"
+import v2 "github.com/bazel-contrib/bazel-gazelle/v2/config"
 
-	// GazelleImportsKey is an internal attribute that lists imported packages
-	// on generated rules. It is replaced with "deps" during import resolution.
-	GazelleImportsKey = "_gazelle_imports"
-)
+// Deprecated: Use github.com/bazel-contrib/bazel-gazelle/v2/config.RulesGoRepoName instead.
+const RulesGoRepoName = v2.RulesGoRepoName
+
+// Deprecated: Use github.com/bazel-contrib/bazel-gazelle/v2/config.GazelleImportsKey instead.
+const GazelleImportsKey = v2.GazelleImportsKey

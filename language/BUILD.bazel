@@ -11,9 +11,9 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/language",
     visibility = ["//visibility:public"],
     deps = [
-        "//config",
         "//repo",
         "//resolve",
+        "//v2/config",
         "//v2/label",
         "//v2/rule",
     ],

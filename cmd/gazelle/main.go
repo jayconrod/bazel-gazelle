@@ -23,7 +23,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/bazelbuild/bazel-gazelle/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 )
 

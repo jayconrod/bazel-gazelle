@@ -27,9 +27,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 )
 
 // Mode determines which directories Walk visits and which directories

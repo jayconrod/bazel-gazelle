@@ -1,4 +1,4 @@
-/* Copyright 2016 The Bazel Authors. All rights reserved.
+/* Copyright 2017 The Bazel Authors. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,19 +13,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package config
 
-import (
-	"fmt"
-	"os"
+const (
+	// RulesGoRepoName is the canonical name of the rules_go repository. It must
+	// match the workspace name in WORKSPACE.
+	// TODO(jayconrod): move to language/go.
+	RulesGoRepoName = "io_bazel_rules_go"
 
-	"github.com/bazel-contrib/bazel-gazelle/v2/config"
-	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
+	// GazelleImportsKey is an internal attribute that lists imported packages
+	// on generated rules. It is replaced with "deps" during import resolution.
+	GazelleImportsKey = "_gazelle_imports"
 )
-
-func printFile(c *config.Config, f *rule.File) error {
-	fmt.Printf(">>> %s\n", f.Path)
-	content := f.Format()
-	_, err := os.Stdout.Write(content)
-	return err
-}

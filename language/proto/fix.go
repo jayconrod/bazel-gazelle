@@ -16,8 +16,8 @@ limitations under the License.
 package proto
 
 import (
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 )
 
 func (*protoLang) Fix(c *config.Config, f *rule.File) {
