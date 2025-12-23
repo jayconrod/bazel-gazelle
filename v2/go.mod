@@ -14,6 +14,9 @@ require (
 	golang.org/x/sync v0.10.0
 	golang.org/x/tools/go/vcs v0.1.0-deprecated
 	google.golang.org/protobuf v1.36.3
+	github.com/bazelbuild/bazel-gazelle v1.0.0-1
 )
 
 require golang.org/x/sys v0.28.0 // indirect
+
+replace github.com/bazelbuild/bazel-gazelle => ..
