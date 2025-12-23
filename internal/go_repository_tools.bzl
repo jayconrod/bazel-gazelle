@@ -14,7 +14,7 @@
 
 "Module providing the go_repository_tools internal rule."
 
-load("//internal:common.bzl", "env_execute", "executable_extension", "watch")
+load("//internal:common.bzl", "env_execute", "executable_extension", "path_list_separator", "watch")
 load("//internal:go_repository_cache.bzl", "read_cache_env")
 load("//internal:go_repository_tools_srcs.bzl", "GO_REPOSITORY_TOOLS_SRCS")
 
@@ -43,7 +43,10 @@ def _go_repository_tools_impl(ctx):
     for src in ctx.attr._go_repository_tools_srcs:
         watch(ctx, src)
 
-    # Create a link to the gazelle repo. This will be our GOPATH.
+    # Create a GOPATH with three elements:
+    # - gazelle v1
+    # - gazelle v2 (different module path, aside from the v2 suffix)
+    # - vendored packages, to be shared by both
     env = read_cache_env(ctx, str(ctx.path(ctx.attr.go_cache)))
     extension = executable_extension(ctx)
     go_tool = env["GOROOT"] + "/bin/go" + extension
@@ -52,16 +55,20 @@ def _go_repository_tools_impl(ctx):
     repo_root_dir = ctx.path(Label("//:WORKSPACE")).dirname
     ctx.symlink(
         repo_root_dir,
-        "src/github.com/bazelbuild/bazel-gazelle",
+        "gazelle_v1/src/github.com/bazelbuild/bazel-gazelle",
     )
     ctx.symlink(
         str(repo_root_dir) + "/v2",
-        "src/github.com/bazel-contrib/bazel-gazelle/v2",
+        "gazelle_v2/src/github.com/bazel-contrib/bazel-gazelle/v2",
     )
+    ctx.symlink(
+        str(repo_root_dir) + "/vendor",
+        "third_party/src",
+    )
+    gopath = [str(ctx.path(d)) for d in ["gazelle_v1", "gazelle_v2", "third_party"]]
 
     env.update({
-        "GOPATH": str(ctx.path(".")),
-        "GOBIN": "",
+        "GOPATH": path_list_separator(ctx).join(gopath),
         "GO111MODULE": "off",
         # workaround: avoid the Go SDK paths from leaking into the binary
         "GOROOT_FINAL": "GOROOT",
@@ -88,7 +95,7 @@ def _go_repository_tools_impl(ctx):
                 go_tool,
                 "run",
                 ctx.path(ctx.attr._list_repository_tools_srcs),
-                "-dir=src/github.com/bazelbuild/bazel-gazelle",
+                "-dir=gazelle_v1/src/github.com/bazelbuild/bazel-gazelle",
                 "-check=internal/go_repository_tools_srcs.bzl",
             ],
             environment = env,
@@ -97,9 +104,11 @@ def _go_repository_tools_impl(ctx):
             fail("list_repository_tools_srcs: " + result.stderr)
 
     # Build the tools.
+    ctx.file("bin/empty", "")  # HACK: we want mkdir, but repository_ctx doesn't have it
     args = [
         go_tool,
-        "install",
+        "build",
+        "-o=bin",
         "-ldflags",
         "-w -s",
         "-gcflags",

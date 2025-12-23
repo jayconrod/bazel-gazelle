@@ -37,6 +37,9 @@ def executable_extension(ctx):
         extension = ".exe"
     return extension
 
+def path_list_separator(ctx):
+    return ";" if ctx.os.name.startswith("windows") else ":"
+
 def watch(ctx, path):
     # Versions of Bazel that have ctx.watch may no longer explicitly watch
     # labels on which ctx.path is called and/or labels in attributes. Do so
