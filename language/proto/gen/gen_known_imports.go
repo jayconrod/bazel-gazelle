@@ -31,7 +31,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/bazelbuild/bazel-gazelle/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 )
 
 var progName = filepath.Base(os.Args[0])

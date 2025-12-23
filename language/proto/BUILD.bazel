@@ -53,12 +53,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config",
-        "//label",
         "//language",
         "//merger",
         "//repo",
         "//resolve",
         "//rule",
+        "//v2/label",
         "//v2/pathtools",
     ],
 )
@@ -79,13 +79,13 @@ go_test(
     embed = [":proto"],
     deps = [
         "//config",
-        "//label",
         "//language",
         "//merger",
         "//repo",
         "//resolve",
         "//rule",
         "//testtools",
+        "//v2/label",
         "//walk",
         "@com_github_bazelbuild_buildtools//build",
     ],

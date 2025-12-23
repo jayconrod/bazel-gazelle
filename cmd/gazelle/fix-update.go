@@ -30,10 +30,10 @@ import (
 
 	"github.com/bazelbuild/buildtools/build"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	gzflag "github.com/bazelbuild/bazel-gazelle/flag"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
-	"github.com/bazelbuild/bazel-gazelle/label"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/merger"
 	"github.com/bazelbuild/bazel-gazelle/repo"

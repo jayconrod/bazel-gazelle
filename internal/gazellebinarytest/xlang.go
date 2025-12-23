@@ -21,8 +21,8 @@ package gazellebinarytest
 import (
 	"flag"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/label"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
 	"github.com/bazelbuild/bazel-gazelle/resolve"

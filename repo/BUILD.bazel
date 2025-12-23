@@ -9,8 +9,8 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/repo",
     visibility = ["//visibility:public"],
     deps = [
-        "//label",
         "//rule",
+        "//v2/label",
         "//v2/pathtools",
         "@org_golang_x_mod//modfile",
         "@org_golang_x_tools_go_vcs//:vcs",

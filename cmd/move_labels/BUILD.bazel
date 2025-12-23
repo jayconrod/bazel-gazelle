@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/wspace",
-        "//label",
+        "//v2/label",
         "//v2/pathtools",
         "@com_github_bazelbuild_buildtools//build",
     ],

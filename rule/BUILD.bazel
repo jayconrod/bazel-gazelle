@@ -16,7 +16,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/rule",
     visibility = ["//visibility:public"],
     deps = [
-        "//label",
+        "//v2/label",
         "@com_github_bazelbuild_buildtools//build",
         "@com_github_bazelbuild_buildtools//tables",
     ],
@@ -32,7 +32,7 @@ go_test(
     ],
     embed = [":rule"],
     deps = [
-        "//label",
+        "//v2/label",
         "@com_github_bazelbuild_buildtools//build",
         "@com_github_google_go_cmp//cmp",
     ],

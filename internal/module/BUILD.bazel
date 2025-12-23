@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
     visibility = ["//:__subpackages__"],
     deps = [
-        "//label",
+        "//v2/label",
         "@com_github_bazelbuild_buildtools//build",
     ],
 )

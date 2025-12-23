@@ -17,11 +17,11 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//config",
-        "//label",
         "//language",
         "//repo",
         "//resolve",
         "//rule",
+        "//v2/label",
     ],
 )
 

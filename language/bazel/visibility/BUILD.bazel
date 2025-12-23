@@ -11,12 +11,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config",
-        "//label",
         "//language",
         "//merger",
         "//repo",
         "//resolve",
         "//rule",
+        "//v2/label",
     ],
 )
 
@@ -32,9 +32,9 @@ go_test(
     deps = [
         ":visibility",
         "//config",
-        "//label",
         "//language",
         "//rule",
+        "//v2/label",
     ],
 )
 
