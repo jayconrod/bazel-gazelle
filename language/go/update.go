@@ -20,8 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/language"
-	"github.com/bazelbuild/bazel-gazelle/rule"
 	"golang.org/x/sync/errgroup"
 )
 

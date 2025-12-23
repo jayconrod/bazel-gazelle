@@ -34,9 +34,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/internal/module"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
-	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 
 // Config holds information about how Gazelle should run. This is based on

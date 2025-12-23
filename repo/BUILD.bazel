@@ -9,9 +9,9 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/repo",
     visibility = ["//visibility:public"],
     deps = [
-        "//rule",
         "//v2/label",
         "//v2/pathtools",
+        "//v2/rule",
         "@org_golang_x_mod//modfile",
         "@org_golang_x_tools_go_vcs//:vcs",
     ],
@@ -26,9 +26,9 @@ go_test(
     ],
     embed = [":repo"],
     deps = [
-        "//rule",
         "//testtools",
         "//v2/pathtools",
+        "//v2/rule",
         "@org_golang_x_tools_go_vcs//:vcs",
     ],
 )

@@ -11,8 +11,8 @@ go_library(
     deps = [
         "//config",
         "//repo",
-        "//rule",
         "//v2/label",
+        "//v2/rule",
     ],
 )
 
@@ -40,8 +40,8 @@ go_test(
     embed = [":resolve"],
     deps = [
         "//config",
-        "//rule",
         "//v2/label",
+        "//v2/rule",
         "@com_github_google_go_cmp//cmp",
     ],
 )

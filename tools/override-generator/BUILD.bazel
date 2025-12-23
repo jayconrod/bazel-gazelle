@@ -19,7 +19,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//repo",
-        "//rule",
+        "//v2/rule",
         "@com_github_bazelbuild_buildtools//build",
     ],
 )

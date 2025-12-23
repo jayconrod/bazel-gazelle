@@ -13,8 +13,8 @@ go_library(
     deps = [
         "//config",
         "//flag",
-        "//rule",
         "//v2/pathtools",
+        "//v2/rule",
         "@com_github_bazelbuild_buildtools//build",
         "@com_github_bmatcuk_doublestar_v4//:doublestar",
     ],
@@ -29,8 +29,8 @@ go_test(
     embed = [":walk"],
     deps = [
         "//config",
-        "//rule",
         "//testtools",
+        "//v2/rule",
         "@com_github_bmatcuk_doublestar_v4//:doublestar",
         "@com_github_google_go_cmp//cmp",
     ],

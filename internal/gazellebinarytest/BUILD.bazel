@@ -20,8 +20,8 @@ go_library(
         "//language",
         "//repo",
         "//resolve",
-        "//rule",
         "//v2/label",
+        "//v2/rule",
     ],
 )
 

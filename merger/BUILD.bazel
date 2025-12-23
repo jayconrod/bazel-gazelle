@@ -9,7 +9,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/merger",
     visibility = ["//visibility:public"],
     deps = [
-        "//rule",
+        "//v2/rule",
         "@com_github_bazelbuild_buildtools//build",
     ],
 )
@@ -26,7 +26,7 @@ go_test(
         "//language",
         "//language/go",
         "//language/proto",
-        "//rule",
+        "//v2/rule",
         "@com_github_bazelbuild_buildtools//build",
         "@com_github_google_go_cmp//cmp",
     ],

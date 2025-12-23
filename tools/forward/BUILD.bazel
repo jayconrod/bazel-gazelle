@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/tools/forward",
     visibility = ["//visibility:private"],
     deps = [
-        "//rule",
+        "//v2/rule",
     ],
 )
 

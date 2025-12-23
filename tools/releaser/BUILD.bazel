@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/tools/releaser",
     visibility = ["//visibility:private"],
     deps = [
-        "//rule",
+        "//v2/rule",
         "@com_github_bazelbuild_buildtools//build",
     ],
 )

@@ -57,9 +57,9 @@ go_library(
         "//merger",
         "//repo",
         "//resolve",
-        "//rule",
         "//v2/label",
         "//v2/pathtools",
+        "//v2/rule",
     ],
 )
 
@@ -83,9 +83,9 @@ go_test(
         "//merger",
         "//repo",
         "//resolve",
-        "//rule",
         "//testtools",
         "//v2/label",
+        "//v2/rule",
         "//walk",
         "@com_github_bazelbuild_buildtools//build",
     ],

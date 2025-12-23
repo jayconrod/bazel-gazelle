@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//config",
         "//language",
-        "//rule",
+        "//v2/rule",
     ],
 )
 

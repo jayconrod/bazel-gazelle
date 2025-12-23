@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//repo",
-        "//rule",
+        "//v2/rule",
     ],
 )
 

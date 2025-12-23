@@ -41,7 +41,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bazelbuild/bazel-gazelle/rule"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 )
 
 // Phase indicates which attributes should be merged in matching rules.

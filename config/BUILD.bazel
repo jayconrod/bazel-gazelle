@@ -11,7 +11,7 @@ go_library(
     deps = [
         "//internal/module",
         "//internal/wspace",
-        "//rule",
+        "//v2/rule",
     ],
 )
 
@@ -19,7 +19,7 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":config"],
-    deps = ["//rule"],
+    deps = ["//v2/rule"],
 )
 
 filegroup(

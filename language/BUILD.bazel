@@ -14,8 +14,8 @@ go_library(
         "//config",
         "//repo",
         "//resolve",
-        "//rule",
         "//v2/label",
+        "//v2/rule",
     ],
 )
 

@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 
 // ProtoConfig contains configuration values related to protos.
