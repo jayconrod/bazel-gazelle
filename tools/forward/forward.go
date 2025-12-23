@@ -96,6 +96,15 @@ func run(wd string, args []string) error {
 		return fmt.Errorf("running gazelle: %w", err)
 	}
 
+	// Update the source list to fix go_repository_tools.
+	cmd = exec.Command("go", "run", "internal/list_repository_tools_srcs.go", "-dir", modRootDir, "-generate", "internal/go_repository_tools_srcs.bzl")
+	cmd.Dir = modRootDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("updating go_repository_tools_srcs.bzl: %w", err)
+	}
+
 	return nil
 }
 
