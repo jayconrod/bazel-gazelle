@@ -26,7 +26,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bazelbuild/bazel-gazelle/pathtools"
+	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	bzl "github.com/bazelbuild/buildtools/build"
 )
 

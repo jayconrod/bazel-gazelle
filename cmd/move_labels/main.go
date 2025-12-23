@@ -27,9 +27,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
 	"github.com/bazelbuild/bazel-gazelle/label"
-	"github.com/bazelbuild/bazel-gazelle/pathtools"
 	"github.com/bazelbuild/buildtools/build"
 )
 

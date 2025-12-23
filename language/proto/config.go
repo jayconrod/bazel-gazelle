@@ -22,8 +22,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/pathtools"
 	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 

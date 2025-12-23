@@ -29,8 +29,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazelbuild/bazel-gazelle/label"
-	"github.com/bazelbuild/bazel-gazelle/pathtools"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/vcs"
 )

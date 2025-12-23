@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//internal/wspace",
         "//label",
-        "//pathtools",
+        "//v2/pathtools",
         "@com_github_bazelbuild_buildtools//build",
     ],
 )

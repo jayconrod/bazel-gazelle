@@ -56,10 +56,10 @@ go_library(
         "//label",
         "//language",
         "//merger",
-        "//pathtools",
         "//repo",
         "//resolve",
         "//rule",
+        "//v2/pathtools",
     ],
 )
 
