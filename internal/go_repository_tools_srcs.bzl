@@ -137,6 +137,8 @@ GO_REPOSITORY_TOOLS_SRCS = [
     Label("//tools/releaser:BUILD.bazel"),
     Label("//tools/releaser:main.go"),
     Label("//v2:BUILD.bazel"),
+    Label("//v2/flag:BUILD.bazel"),
+    Label("//v2/flag:flag.go"),
     Label("//walk:BUILD.bazel"),
     Label("//walk:cache.go"),
     Label("//walk:config.go"),
