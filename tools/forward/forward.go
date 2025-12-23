@@ -41,6 +41,8 @@ func main() {
 
 func run(wd string, args []string) error {
 	flags := flag.NewFlagSet("forward", flag.ContinueOnError)
+	var internal bool
+	flags.BoolVar(&internal, "internal", false, "moves the package to an internal directory")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: forward directories...\n")
 		flags.PrintDefaults()
@@ -67,8 +69,14 @@ func run(wd string, args []string) error {
 		shimRel = filepath.ToSlash(shimRel)
 		shimPkg := path.Join("github.com/bazelbuild/bazel-gazelle", shimRel)
 
-		destDir := filepath.Join(modRootDir, "v2", shimRel)
-		destPkg := path.Join("github.com/bazel-contrib/bazel-gazelle/v2", shimRel)
+		var destDir, destPkg string
+		if internal {
+			destDir = filepath.Join(modRootDir, "v2/internal", shimRel)
+			destPkg = path.Join("github.com/bazel-contrib/bazel-gazelle/v2/internal", shimRel)
+		} else {
+			destDir = filepath.Join(modRootDir, "v2", shimRel)
+			destPkg = path.Join("github.com/bazel-contrib/bazel-gazelle/v2", shimRel)
+		}
 
 		if err := copyDir(shimDir, destDir); err != nil {
 			return err
