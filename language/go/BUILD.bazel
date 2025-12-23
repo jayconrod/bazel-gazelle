@@ -101,7 +101,7 @@ go_test(
         "//v2/pathtools",
         "//v2/rule",
         "//v2/testtools",
-        "//walk",
+        "//v2/walk",
         "@com_github_bazelbuild_buildtools//build",
         "@com_github_google_go_cmp//cmp",
         "@io_bazel_rules_go//go/tools/bazel",
