@@ -9,7 +9,7 @@ import (
 )
 
 func TestCollectApparent(t *testing.T) {
-	moduleFile, err := runfiles.Rlocation("bazel_gazelle/internal/module/testdata/MODULE.bazel")
+	moduleFile, err := runfiles.Rlocation("bazel_gazelle/v2/internal/module/testdata/MODULE.bazel")
 	if err != nil {
 		t.Fatal(err)
 	}
