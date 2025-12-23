@@ -12,10 +12,10 @@ go_library(
     deps = [
         "//config",
         "//language",
-        "//merger",
         "//repo",
         "//resolve",
         "//v2/label",
+        "//v2/merger",
         "//v2/rule",
     ],
 )
