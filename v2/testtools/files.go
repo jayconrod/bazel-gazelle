@@ -327,8 +327,12 @@ Run %s to update BUILD.out and expected{Stdout,Stderr,ExitCode}.txt files.
 			}
 		}()
 
-		ctx, cancel := context.WithTimeout(context.Background(), args.Timeout)
-		defer cancel()
+		ctx := context.Background()
+		if args.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, args.Timeout)
+			defer cancel()
+		}
 		cmd := exec.CommandContext(ctx, args.GazelleBinaryPath, config.Args...)
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

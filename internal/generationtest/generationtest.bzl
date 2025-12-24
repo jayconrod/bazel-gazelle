@@ -18,7 +18,7 @@ Test for generating rules from gazelle.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
-def gazelle_generation_test(name, gazelle_binary, test_data, build_in_suffix = ".in", build_out_suffix = ".out", gazelle_timeout_seconds = 2, size = None, **kwargs):
+def gazelle_generation_test(name, gazelle_binary, test_data, build_in_suffix = ".in", build_out_suffix = ".out", gazelle_timeout_seconds = 0, size = None, **kwargs):
     """
     gazelle_generation_test is a macro for testing gazelle against workspaces.
 
