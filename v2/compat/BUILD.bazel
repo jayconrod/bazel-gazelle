@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "compat",
+    srcs = ["compat.go"],
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/compat",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//v2/config",
+    ],
+)
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = ["compat.go"],
+    visibility = ["//visibility:public"],
+)

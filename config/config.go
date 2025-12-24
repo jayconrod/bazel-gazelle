@@ -34,6 +34,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	v2 "github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/internal/module"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
@@ -48,129 +49,22 @@ import (
 // Config itself contains only general information. Most configuration
 // information is language-specific and is stored in Exts. This information
 // is modified by extensions that implement Configurer.
-type Config struct {
-	// WorkDir is the effective working directory, used to resolve relative
-	// paths on the command line. When Gazelle is invoked with 'bazel run',
-	// this is set by BUILD_WORKSPACE_DIRECTORY.
-	WorkDir string
-
-	// RepoRoot is the absolute, canonical path to the root directory of the
-	// repository with all symlinks resolved.
-	RepoRoot string
-
-	// RepoName is the name of the repository.
-	RepoName string
-
-	// ReadBuildFilesDir is the absolute path to a directory where
-	// build files should be read from instead of RepoRoot.
-	ReadBuildFilesDir string
-
-	// WriteBuildFilesDir is the absolute path to a directory where
-	// build files should be written to instead of RepoRoot.
-	WriteBuildFilesDir string
-
-	// ValidBuildFileNames is a list of base names that are considered valid
-	// build files. Some repositories may have files named "BUILD" that are not
-	// used by Bazel and should be ignored. Must contain at least one string.
-	ValidBuildFileNames []string
-
-	// ShouldFix determines whether Gazelle attempts to remove and replace
-	// usage of deprecated rules.
-	ShouldFix bool
-
-	// Strict determines how Gazelle handles build file and directive errors. When
-	// set, Gazelle will exit with non-zero value after logging such errors.
-	Strict bool
-
-	// IndexLibraries determines whether Gazelle should build an index of
-	// libraries in the workspace for dependency resolution
-	IndexLibraries bool
-
-	// When IndexLazy is true, Gazelle builds its index lazily, only reading
-	// specific directories indicated by the user or by extensions.
-	// When false, Gazelle indexes all directories.
-	IndexLazy bool
-
-	// KindMap maps from a kind name to its replacement. It provides a way for
-	// users to customize the kind of rules created by Gazelle, via
-	// # gazelle:map_kind.
-	KindMap map[string]MappedKind
-
-	// AliasMap maps a wrapper macro name to the kind of rule that it wraps.
-	// It provides a way for users to define custom macros that generate rules
-	// that are understood by gazelle, while still allowing gazelle to update
-	// the attrs for the macro calls. Configured via # gazelle:macro.
-	AliasMap map[string]string
-
-	// Repos is a list of repository rules declared in the main WORKSPACE file
-	// or in macros called by the main WORKSPACE file. This may affect rule
-	// generation and dependency resolution.
-	Repos []*rule.Rule
-
-	// Langs is a list of language names which Gazelle should process.
-	// An empty list means "all languages".
-	Langs []string
-
-	// Exts is a set of configurable extensions. Generally, each language
-	// has its own set of extensions, but other modules may provide their own
-	// extensions as well. Values in here may be populated by command line
-	// arguments, directives in build files, or other mechanisms.
-	Exts map[string]interface{}
-
-	// Whether Gazelle is loaded as a Bzlmod 'bazel_dep'.
-	Bzlmod bool
-
-	// ModuleToApparentName is a function that maps the name of a Bazel module
-	// to the apparent name (repo_name) specified in the MODULE.bazel file. It
-	// returns the empty string if the module is not found.
-	ModuleToApparentName func(string) string
-}
+//
+// Deprecated: use github.com/bazel-contrib/bazel-gazelle/v2/config.Config instead.
+type Config = v2.Config
 
 // MappedKind describes a replacement to use for a built-in kind.
-type MappedKind struct {
-	FromKind, KindName, KindLoad string
-}
+//
+// Deprecated: use github.com/bazel-contrib/bazel-gazelle/v2/config.MappedKind instead.
+type MappedKind = v2.MappedKind
 
+// Deprecated: use github.com/bazel-contrib/bazel-gazelle/v2/config.New instead.
 func New() *Config {
-	return &Config{
-		ValidBuildFileNames: DefaultValidBuildFileNames,
-		Exts:                make(map[string]interface{}),
-	}
+	return v2.New()
 }
 
-// Clone creates a copy of the configuration for use in a subdirectory.
-// Note that the Exts map is copied, but its contents are not.
-// Configurer.Configure should do this, if needed.
-func (c *Config) Clone() *Config {
-	cc := *c
-	cc.Exts = make(map[string]interface{})
-	for k, v := range c.Exts {
-		cc.Exts[k] = v
-	}
-	cc.KindMap = make(map[string]MappedKind)
-	for k, v := range c.KindMap {
-		cc.KindMap[k] = v
-	}
-	return &cc
-}
-
-var DefaultValidBuildFileNames = []string{"BUILD.bazel", "BUILD"}
-
-// IsValidBuildFileName returns true if a file with the given base name
-// should be treated as a build file.
-func (c *Config) IsValidBuildFileName(name string) bool {
-	for _, n := range c.ValidBuildFileNames {
-		if name == n {
-			return true
-		}
-	}
-	return false
-}
-
-// DefaultBuildFileName returns the base name used to create new build files.
-func (c *Config) DefaultBuildFileName() string {
-	return c.ValidBuildFileNames[0]
-}
+// Deprecated: use github.com/bazel-contrib/bazel-gazelle/v2/config.DefaultValidBuildFileNames instead.
+var DefaultValidBuildFileNames = v2.DefaultValidBuildFileNames
 
 // Configurer is the interface for language or library-specific configuration
 // extensions. Most (ideally all) modifications to Config should happen

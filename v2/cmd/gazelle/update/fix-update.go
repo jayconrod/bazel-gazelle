@@ -29,12 +29,13 @@ import (
 	"syscall"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/profile"
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/internal/wspace"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	gzflag "github.com/bazelbuild/bazel-gazelle/flag"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
@@ -262,14 +263,24 @@ var genericLoads = []rule.LoadInfo{
 
 func Update(ctx context.Context, languages []language.Language, wd string, args []string) (err error) {
 	cexts := make([]config.Configurer, 0, len(languages)+4)
-	cexts = append(cexts,
+	// TODO(v2): convert Configurers
+	for _, cext := range []any{
 		&config.CommonConfigurer{},
 		&updateConfigurer{},
 		&walk.Configurer{},
-		&resolve.Configurer{})
-
+		&resolve.Configurer{},
+	} {
+		cext, ok := compat.ConfigurerV2(cext)
+		if !ok {
+			panic("could not get v2 adapter for builtin v1 Configurer")
+		}
+		cexts = append(cexts, cext)
+	}
 	for _, lang := range languages {
-		cexts = append(cexts, lang)
+		cext, ok := compat.ConfigurerV2(lang)
+		if ok {
+			cexts = append(cexts, cext)
+		}
 	}
 
 	c, err := newFixUpdateConfiguration(wd, args, cexts)

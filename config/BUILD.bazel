@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//internal/module",
         "//internal/wspace",
+        "//v2/config",
         "//v2/rule",
     ],
 )
