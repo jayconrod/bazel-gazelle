@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/profile"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
@@ -45,7 +46,7 @@ type updateReposConfig struct {
 	repoFileMap   map[string]*rule.File
 	cpuProfile    string
 	memProfile    string
-	profile       profiler
+	profile       profile.Profiler
 }
 
 const updateReposName = "_update-repos"
@@ -93,7 +94,7 @@ func (*updateReposConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *con
 
 func (*updateReposConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
 	uc := getUpdateReposConfig(c)
-	p, err := newProfiler(uc.cpuProfile, uc.memProfile)
+	p, err := profile.New(uc.cpuProfile, uc.memProfile)
 	if err != nil {
 		return err
 	}
@@ -154,7 +155,7 @@ func updateRepos(wd string, args []string) (err error) {
 	}
 	uc := getUpdateReposConfig(c)
 	defer func() {
-		if err := uc.profile.stop(); err != nil {
+		if err := uc.profile.Stop(); err != nil {
 			log.Printf("stopping profiler: %v", err)
 		}
 	}()

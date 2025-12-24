@@ -13,15 +13,31 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package update_test
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
+	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
+	golang "github.com/bazelbuild/bazel-gazelle/language/go"
+	"github.com/bazelbuild/bazel-gazelle/language/proto"
 )
+
+func runGazelleForTest(dir string, args []string) error {
+	ctx := context.Background()
+	langs := []language.Language{
+		visibility.NewLanguage(),
+		proto.NewLanguage(),
+		golang.NewLanguage(),
+	}
+	return update.Update(ctx, langs, dir, args)
+}
 
 func TestDiffExisting(t *testing.T) {
 	files := []testtools.FileSpec{
@@ -41,7 +57,7 @@ func TestDiffExisting(t *testing.T) {
 	defer cleanup()
 
 	wantError := "encountered changes while running diff"
-	if err := runGazelle(dir, []string{"-mode=diff", "-patch=p"}); err.Error() != wantError {
+	if err := runGazelleForTest(dir, []string{"-mode=diff", "-patch=p"}); err.Error() != wantError {
 		t.Fatalf("got %q; want %q", err, wantError)
 	}
 
@@ -78,7 +94,7 @@ func TestDiffNew(t *testing.T) {
 	defer cleanup()
 
 	wantError := "encountered changes while running diff"
-	if err := runGazelle(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err.Error() != wantError {
+	if err := runGazelleForTest(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err.Error() != wantError {
 		t.Fatalf("got %q; want %q", err, wantError)
 	}
 
@@ -108,7 +124,7 @@ func TestDiffMissingAndNoChange(t *testing.T) {
 	dir, cleanup := testtools.CreateFiles(t, files)
 	defer cleanup()
 
-	if err := runGazelle(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err != nil {
+	if err := runGazelleForTest(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err != nil {
 		t.Error("Expected no diff, but got a diff.")
 	}
 	testtools.CheckFiles(t, dir, []testtools.FileSpec{{Path: "p"}})
@@ -122,7 +138,7 @@ func TestDiffEmptyAndNoChange(t *testing.T) {
 	dir, cleanup := testtools.CreateFiles(t, files)
 	defer cleanup()
 
-	if err := runGazelle(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err != nil {
+	if err := runGazelleForTest(dir, []string{"-go_prefix=example.com/hello", "-mode=diff", "-patch=p"}); err != nil {
 		t.Error("Expected no diff, but got a diff.")
 	}
 	testtools.CheckFiles(t, dir, []testtools.FileSpec{{Path: "p"}})
@@ -151,7 +167,7 @@ func TestDiffReadWriteDir(t *testing.T) {
 	}
 
 	wantError := "encountered changes while running diff"
-	if err := runGazelle(dir, args); err.Error() != wantError {
+	if err := runGazelleForTest(dir, args); err.Error() != wantError {
 		t.Fatalf("got %q; want %q", err, wantError)
 	}
 
@@ -200,7 +216,7 @@ go_library(
 	newline_dir, cleanup := testtools.CreateFiles(t, newlineFiles)
 	defer cleanup()
 
-	if err := runGazelle(newline_dir, []string{"-mode=diff"}); err != nil {
+	if err := runGazelleForTest(newline_dir, []string{"-mode=diff"}); err != nil {
 		t.Fatalf("got %q; want %q", err, "")
 	}
 
@@ -227,7 +243,7 @@ go_library(
 	defer cleanup()
 
 	wantError := "encountered changes while running diff"
-	if err := runGazelle(noNewline_dir, []string{"-mode=diff"}); err == nil || err.Error() != wantError {
+	if err := runGazelleForTest(noNewline_dir, []string{"-mode=diff"}); err == nil || err.Error() != wantError {
 		t.Fatalf("got %q; want %q", err, wantError)
 	}
 }

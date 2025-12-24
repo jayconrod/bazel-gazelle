@@ -22,6 +22,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -31,8 +32,55 @@ import (
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/internal/wspace"
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/go-cmp/cmp"
 )
+
+// Set via x_defs.
+var goRootFile = ""
+
+func TestMain(m *testing.M) {
+	status := 1
+	defer func() {
+		os.Exit(status)
+	}()
+
+	flag.Parse()
+
+	var err error
+	tmpDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "gazelle_test")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	defer func() {
+		// Before deleting files in the temporary directory, add write permission
+		// to any files that don't have it. Files and directories in the module cache
+		// are read-only, and on Windows, the read-only bit prevents deletion and
+		// prevents Bazel from cleaning up the source tree.
+		_ = filepath.Walk(tmpDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if mode := info.Mode(); mode&0o200 == 0 {
+				err = os.Chmod(path, mode|0o200)
+			}
+			return err
+		})
+		os.RemoveAll(tmpDir)
+	}()
+
+	goRootFilePath, err := runfiles.Rlocation(goRootFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "could not locate GOROOT file:", err)
+		return
+	}
+	os.Setenv("GOROOT", filepath.Dir(goRootFilePath))
+	os.Setenv("GOCACHE", filepath.Join(tmpDir, "gocache"))
+	os.Setenv("GOPATH", filepath.Join(tmpDir, "gopath"))
+
+	status = m.Run()
+}
 
 // skipIfWorkspaceVisible skips the test if the WORKSPACE file for the
 // repository is visible. This happens in newer Bazel versions when tests

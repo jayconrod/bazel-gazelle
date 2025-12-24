@@ -18,42 +18,16 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 )
-
-type command int
-
-const (
-	updateCmd command = iota
-	fixCmd
-	updateReposCmd
-	helpCmd
-)
-
-var commandFromName = map[string]command{
-	"fix":          fixCmd,
-	"help":         helpCmd,
-	"update":       updateCmd,
-	"update-repos": updateReposCmd,
-}
-
-var nameFromCommand = []string{
-	// keep in sync with definition above
-	"update",
-	"fix",
-	"update-repos",
-	"help",
-}
-
-func (cmd command) String() string {
-	return nameFromCommand[cmd]
-}
 
 func main() {
 	log.SetPrefix("gazelle: ")
@@ -70,7 +44,7 @@ func main() {
 	}
 
 	if err := run(wd, os.Args[1:]); err != nil && err != flag.ErrHelp {
-		if err == errExit {
+		if err == update.ErrDiffExit {
 			os.Exit(1)
 		} else {
 			log.Fatal(err)
@@ -79,28 +53,19 @@ func main() {
 }
 
 func run(wd string, args []string) error {
-	cmd := updateCmd
-	if len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
-		cmd = helpCmd
-	} else if len(args) > 0 {
-		c, ok := commandFromName[args[0]]
-		if ok {
-			cmd = c
-			args = args[1:]
-		}
+	ctx := context.Background()
+	if len(args) == 0 {
+		return update.Update(ctx, languages, wd, args)
 	}
-
-	switch cmd {
-	case fixCmd, updateCmd:
-		return runFixUpdate(wd, cmd, args)
-	case helpCmd:
+	switch args[0] {
+	case "help", "-h", "-help", "--help":
 		return help()
-	case updateReposCmd:
-		return updateRepos(wd, args)
-	default:
-		log.Panicf("unknown command: %v", cmd)
+	case "update-repos":
+		return updateRepos(wd, args[1:])
 	}
-	return nil
+	// Update supports the "fix" and "update" commands and does its own argument
+	// parsing, so we don't need to trim the first argument.
+	return update.Update(ctx, languages, wd, args)
 }
 
 func help() error {

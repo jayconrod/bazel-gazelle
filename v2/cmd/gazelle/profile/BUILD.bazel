@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "profile",
+    srcs = ["profiler.go"],
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/profile",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "profile_test",
+    srcs = ["profiler_test.go"],
+    embed = [":profile"],
+)
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = [
+        "BUILD.bazel",
+        "profiler.go",
+        "profiler_test.go",
+    ],
+    visibility = ["//visibility:public"],
+)

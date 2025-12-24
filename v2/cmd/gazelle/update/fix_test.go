@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package main
+package update_test
 
 import (
 	"flag"
@@ -96,7 +96,7 @@ func TestCreateFile(t *testing.T) {
 	}
 
 	// Check that Gazelle creates a new file named "BUILD.bazel".
-	if err = run(dir, defaultArgs(dir)); err != nil {
+	if err = runGazelleForTest(dir, defaultArgs(dir)); err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestUpdateFile(t *testing.T) {
 	}
 
 	// Check that Gazelle updates the BUILD file in place.
-	if err = run(dir, defaultArgs(dir)); err != nil {
+	if err = runGazelleForTest(dir, defaultArgs(dir)); err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
 
@@ -180,7 +180,7 @@ go_binary(
 	modTime := st.ModTime()
 
 	// Ensure that Gazelle does not write to the BUILD file.
-	if err = run(dir, defaultArgs(dir)); err != nil {
+	if err = runGazelleForTest(dir, defaultArgs(dir)); err != nil {
 		t.Fatalf("run failed: %v", err)
 	}
 
@@ -338,7 +338,7 @@ go_library(
 				}
 				tc.args[i] = replacer.Replace(tc.args[i])
 			}
-			if err := run(dir, tc.args); err != nil {
+			if err := runGazelleForTest(dir, tc.args); err != nil {
 				t.Error(err)
 			}
 			testtools.CheckFiles(t, dir, tc.want)
@@ -376,7 +376,7 @@ go_library(
 	defer cleanup()
 
 	// Check that Gazelle does not update the BUILD file, due to lang filter.
-	if err := run(dir, []string{
+	if err := runGazelleForTest(dir, []string{
 		"-repo_root", dir,
 		"-go_prefix", "example.com/repo",
 		"-lang=proto",
@@ -622,7 +622,7 @@ go_library(
 			dir, cleanup := testtools.CreateFiles(t, tc.before)
 			defer cleanup()
 
-			if err := run(dir, []string{
+			if err := runGazelleForTest(dir, []string{
 				"-repo_root", dir,
 				"-go_prefix", "example.com/repo",
 				dir,
