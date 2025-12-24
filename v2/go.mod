@@ -1,4 +1,4 @@
-module github.com/bazel-contrib/v2/bazel-gazelle
+module github.com/bazel-contrib/bazel-gazelle/v2
 
 go 1.22.9
 
