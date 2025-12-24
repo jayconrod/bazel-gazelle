@@ -72,9 +72,9 @@ func getUpdateConfig(c *config.Config) *updateConfig {
 	return c.Exts[updateName].(*updateConfig)
 }
 
-var _ config.Configurer = (*updateConfigurer)(nil)
+var _ config.Configurer = (*UpdateConfigurer)(nil)
 
-type updateConfigurer struct {
+type UpdateConfigurer struct {
 	mode           string
 	recursive      bool
 	knownImports   []string
@@ -83,7 +83,7 @@ type updateConfigurer struct {
 	memProfile     string
 }
 
-func (ucr *updateConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
+func (ucr *UpdateConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
 	uc := &updateConfig{}
 	c.Exts[updateName] = uc
 
@@ -100,7 +100,7 @@ func (ucr *updateConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *conf
 	fs.BoolVar(&uc.removeNoopKeepComments, "remove_noop_keep_comments", false, "when set, gazelle will remove noop keep comments from BUILD files")
 }
 
-func (ucr *updateConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
+func (ucr *UpdateConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
 	uc := getUpdateConfig(c)
 
 	var ok bool
@@ -222,9 +222,9 @@ func (ucr *updateConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) erro
 	return nil
 }
 
-func (ucr *updateConfigurer) KnownDirectives() []string { return nil }
+func (ucr *UpdateConfigurer) KnownDirectives() []string { return nil }
 
-func (ucr *updateConfigurer) Configure(c *config.Config, rel string, f *rule.File) {}
+func (ucr *UpdateConfigurer) Configure(c *config.Config, rel string, f *rule.File) {}
 
 // visitRecord stores information about a directory visited with
 // packages.Walk.
@@ -260,16 +260,16 @@ var genericLoads = []rule.LoadInfo{
 	},
 }
 
-func Update(ctx context.Context, languages []language.Language, wd string, args []string) (err error) {
-	cexts := make([]config.Configurer, 0, len(languages)+4)
-	cexts = append(cexts,
-		&config.CommonConfigurer{},
-		&updateConfigurer{},
-		&walk.Configurer{},
-		&resolve.Configurer{})
-
-	for _, lang := range languages {
-		cexts = append(cexts, lang)
+func Update(ctx context.Context, exts []any, wd string, args []string) (err error) {
+	cexts := make([]config.Configurer, 0, len(exts))
+	languages := make([]language.Language, 0, len(exts))
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			cexts = append(cexts, cext)
+		}
+		if lang, ok := ext.(language.Language); ok {
+			languages = append(languages, lang)
+		}
 	}
 
 	c, err := newFixUpdateConfiguration(wd, args, cexts)
@@ -280,7 +280,6 @@ func Update(ctx context.Context, languages []language.Language, wd string, args 
 	mrslv := newMetaResolver()
 	kinds := make(map[string]rule.KindInfo)
 	loads := genericLoads
-	exts := make([]interface{}, 0, len(languages))
 	for _, lang := range languages {
 		for kind, info := range lang.Kinds() {
 			mrslv.AddBuiltin(kind, lang)
@@ -291,7 +290,6 @@ func Update(ctx context.Context, languages []language.Language, wd string, args 
 		} else {
 			loads = append(loads, lang.Loads()...)
 		}
-		exts = append(exts, lang)
 	}
 	ruleIndex := resolve.NewRuleIndex(mrslv.Resolver, exts...)
 

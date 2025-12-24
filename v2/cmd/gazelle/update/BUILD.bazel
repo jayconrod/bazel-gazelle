@@ -41,11 +41,13 @@ go_test(
     x_defs = {"goRootFile": "$(rlocationpath @go_sdk//:ROOT)"},
     deps = [
         ":update",
-        "//language",
+        "//config",
         "//language/bazel/visibility",
         "//language/go",
         "//language/proto",
+        "//resolve",
         "//v2/testtools",
+        "//v2/walk",
         "@io_bazel_rules_go//go/runfiles",
     ],
 )

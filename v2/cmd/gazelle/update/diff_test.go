@@ -23,20 +23,26 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
-	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
+	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
 	golang "github.com/bazelbuild/bazel-gazelle/language/go"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
+	"github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
 func runGazelleForTest(dir string, args []string) error {
 	ctx := context.Background()
-	langs := []language.Language{
+	exts := []any{
+		&config.CommonConfigurer{},
+		&update.UpdateConfigurer{},
+		&walk.Configurer{},
+		&resolve.Configurer{},
 		visibility.NewLanguage(),
 		proto.NewLanguage(),
 		golang.NewLanguage(),
 	}
-	return update.Update(ctx, langs, dir, args)
+	return update.Update(ctx, exts, dir, args)
 }
 
 func TestDiffExisting(t *testing.T) {

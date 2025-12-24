@@ -133,6 +133,8 @@ GO_REPOSITORY_TOOLS_SRCS = [
     Label("//v2:BUILD.bazel"),
     Label("//v2/cmd:BUILD.bazel"),
     Label("//v2/cmd/gazelle:BUILD.bazel"),
+    Label("//v2/cmd/gazelle:langs.go"),
+    Label("//v2/cmd/gazelle:main.go"),
     Label("//v2/cmd/gazelle/profile:BUILD.bazel"),
     Label("//v2/cmd/gazelle/profile:profiler.go"),
     Label("//v2/cmd/gazelle/update:BUILD.bazel"),

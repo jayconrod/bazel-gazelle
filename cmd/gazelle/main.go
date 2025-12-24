@@ -25,8 +25,10 @@ import (
 	"os"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
+	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
 func main() {
@@ -54,8 +56,18 @@ func main() {
 
 func run(wd string, args []string) error {
 	ctx := context.Background()
+	exts := make([]any, 0, len(languages)+4)
+	exts = append(exts,
+		&config.CommonConfigurer{},
+		&update.UpdateConfigurer{},
+		&walk.Configurer{},
+		&resolve.Configurer{})
+	for _, lang := range languages {
+		exts = append(exts, lang)
+	}
+
 	if len(args) == 0 {
-		return update.Update(ctx, languages, wd, args)
+		return update.Update(ctx, exts, wd, args)
 	}
 	switch args[0] {
 	case "help", "-h", "-help", "--help":
@@ -65,7 +77,7 @@ func run(wd string, args []string) error {
 	}
 	// Update supports the "fix" and "update" commands and does its own argument
 	// parsing, so we don't need to trim the first argument.
-	return update.Update(ctx, languages, wd, args)
+	return update.Update(ctx, exts, wd, args)
 }
 
 func help() error {

@@ -25,11 +25,13 @@ go_library(
         "//language/go",
         "//language/proto",
         "//repo",
+        "//resolve",
         "//v2/cmd/gazelle/profile",
         "//v2/cmd/gazelle/update",
         "//v2/label",
         "//v2/merger",
         "//v2/rule",
+        "//v2/walk",
     ],
 )
 
