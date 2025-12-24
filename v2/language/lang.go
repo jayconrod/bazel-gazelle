@@ -1,0 +1,219 @@
+/* Copyright 2025 The Bazel Authors. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package language provides interfaces for extending Gazelle.
+//
+// TODO(v2): write documentation.
+package language
+
+import (
+	"context"
+
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
+)
+
+type Language interface {
+	Name() string
+}
+
+type Configurer interface {
+	// KnownDirectives returns a list of directive names this Configurer can
+	// interpret.
+	KnownDirectives() []string
+
+	// Configure modifies the configuration using directives and other information
+	// extracted from a build file. Configure is called in each directory.
+	Configure(context.Context, ConfigureArgs) error
+}
+
+type ConfigureArgs struct {
+	// Config is the configuration for the current directory.
+	Config *config.Config
+
+	// Rel is the slash-separated path to the directory, relative to the
+	// repository root ("" for the root directory itself).
+	Rel string
+
+	// File is the build file for the directory. File is nil if there is
+	// no existing build file.
+	File *rule.File
+}
+
+type Indexer interface {
+	// Imports reads a rule and returns a set of strings that may be used to
+	// import it, if it is importable at all.
+	Imports(context.Context, ImportsArgs) (ImportsResult, error)
+}
+
+type ImportsArgs struct {
+	// Config is the configuration for the current directory.
+	Config *config.Config
+
+	// Rule is the non-nil rule to index.
+	Rule *rule.Rule
+
+	// File is the build file that contains Rule.
+	File *rule.File
+}
+
+type ImportsResult struct {
+	// Imports is a list of language names and strings by which the rule may be
+	// imported.
+	Imports []ImportSpec
+
+	// Embeds is a list of library labels that this rule embeds. Both the embedder
+	// and embeddee may be importable by the same string, but in case of ambiguity,
+	// the dependency resolver prefers the embedder.
+	Embeds []label.Label
+
+	// NotImportable is set for a rule that can't be imported, such as a test.
+	// Its not necessary to set this when both Imports and Embeds are empty.
+	NotImportable bool
+}
+
+type ImportSpec struct {
+	Lang string
+	Imp  string
+}
+
+type Resolver interface {
+	// Resolve performs dependency resolution on a rule, setting its
+	// "deps" attribute.
+	Resolve(context.Context, ResolveArgs) error
+}
+
+type ResolveArgs struct {
+	// Config is the configuration for the current directory.
+	Config *config.Config
+
+	// Index is a table mapping import strings to bazel labels for known
+	// libraries, constructed using Indexer.
+	Index *resolve.RuleIndex
+
+	// Rule is the rule to resolve dependencies for. Resolve should modify its
+	// "deps" attribute (or language-appropriate equivalent).
+	Rule *rule.Rule
+
+	// From is Rule's Bazel label.
+	From label.Label
+
+	// Imports is an opaque value returned by language.Generator for each
+	// generated rule, containing information about imported libraries.
+	// Resolver must know how to interpret this.
+	Imports any
+}
+
+type Generator interface {
+	// Kinds returns a map from rule kinds to information on how to match and
+	// merge attributes that may be found in rules of those kinds. All kinds of
+	// rules generated for this language may be found here.
+	Kinds() map[string]rule.KindInfo
+
+	// Generate reads source files in a directory and produces a list of rules
+	// that should appear in that directory's build file.
+	Generate(context.Context, GenerateArgs) (GenerateResult, error)
+}
+
+type GenerateArgs struct {
+	// Config is the configuration for the current directory.
+	Config *config.Config
+
+	// Dir is the canonical absolute path to the directory.
+	Dir string
+
+	// Rel is the slash-separated path to the directory, relative to the
+	// repository root ("" for the root directory itself). This may be used
+	// as the package name in labels.
+	Rel string
+
+	// File is the build file for the directory. File is nil if there is
+	// no existing build file.
+	File *rule.File
+
+	// Subdirs is a list of subdirectories in the directory, including
+	// symbolic links to directories that Gazelle will follow.
+	// RegularFiles is a list of regular files including other symbolic
+	// links.
+	// GenFiles is a list of generated files in the directory
+	// (usually these are mentioned as "out" or "outs" attributes in rules).
+	// These slices must not be modified.
+	Subdirs, RegularFiles, GenFiles []string
+
+	// OtherEmpty is a list of empty rules generated by other languages.
+	// OtherGen is a list of generated rules generated by other languages.
+	OtherEmpty, OtherGen []*rule.Rule
+}
+
+type GenerateResult struct {
+	// Gen is a list of rules generated from files found in the directory
+	// GenerateRules was asked to process. These will be merged with existing
+	// rules or added to the build file.
+	Gen []*rule.Rule
+
+	// Empty is a list of rules that cannot be built with the files found in the
+	// directory GenerateRules was asked to process. These will be merged with
+	// existing rules. If the merged rules are empty, they will be deleted.
+	Empty []*rule.Rule
+
+	// Imports contains information about the imported libraries for each
+	// rule in Gen. Gen and Imports must have the same length, since they
+	// correspond. These values are passed to Resolve after merge. The type
+	// is opaque since different languages may use different representations.
+	Imports []any
+
+	// RelsToIndex is a list of additional directories to index for dependency
+	// resolution, expressed as slash-separated paths relative to the repository
+	// root, or "" for the root directory itself. If indexing is enabled,
+	// libraries in these directories are indexed before dependencies are
+	// resolved. Subdirectories are not recursively indexed. This list may
+	// contain non-existent directories.
+	RelsToIndex []string
+}
+
+type Fixer interface {
+	// Fix repairs deprecated usage of language-specific rules in f. This is
+	// called before the file is indexed. Unless c.ShouldFix is true, fixes
+	// that delete or rename rules should not be performed.
+	Fix(context.Context, FixerArgs) error
+}
+
+type FixerArgs struct {
+	// Config is the configuration for the current directory.
+	Config *config.Config
+
+	// Rel is the slash-separated path to the directory, relative to the
+	// repository root ("" for the root directory itself). This may be used
+	// as the package name in labels.
+	Rel string
+
+	// File is the build file for the directory. File is nil if there is
+	// no existing build file.
+	File *rule.File
+}
+
+type OnStart interface {
+	// Called when Gazelle starts, before walking the directory tree and before
+	// Configure is called on any extension.
+	OnStart(ctx context.Context) error
+}
+
+type OnFinish interface {
+	// Called after Gazelle has resolved dependencies on all rules and written
+	// updated build files.
+	OnFinish(ctx context.Context) error
+}
