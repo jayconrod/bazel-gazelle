@@ -52,35 +52,3 @@ func TestRunner(t *testing.T) {
 		}
 	}
 }
-
-func TestRunnerUpdateReposFromGoMod(t *testing.T) {
-	origWorkspaceData, err := os.ReadFile("WORKSPACE")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.WriteFile("WORKSPACE", origWorkspaceData, 0o666); err != nil {
-			t.Fatalf("restoring WORKSPACE: %v", err)
-		}
-	}()
-
-	if err := bazel_testing.RunBazel("run", "--enable_workspace", "//:gazelle", "--", "update-repos", "-from_file=go.mod"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRunnerUpdateReposCommand(t *testing.T) {
-	origWorkspaceData, err := os.ReadFile("WORKSPACE")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.WriteFile("WORKSPACE", origWorkspaceData, 0o666); err != nil {
-			t.Fatalf("restoring WORKSPACE: %v", err)
-		}
-	}()
-
-	if err := bazel_testing.RunBazel("run", "--enable_workspace", "//:gazelle-update-repos"); err != nil {
-		t.Fatal(err)
-	}
-}

@@ -103,7 +103,7 @@ proto extension stores metadata in hidden attributes of generated
         # _go_context_data includes a dependency on stdlib.
         "_stdlib": attr.label(default = "@io_bazel_rules_go//:stdlib"),
         "_srcs": attr.label(
-            default = "//cmd/gazelle:gazelle_lib",
+            default = "//v2/cmd/gazelle:gazelle_lib",
         ),
     },
     "executable": True,
