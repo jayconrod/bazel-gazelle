@@ -18,6 +18,8 @@ go_library(
         "//repo",
         "//resolve",
         "//v2/cmd/gazelle/profile",
+        "//v2/compat",
+        "//v2/config",
         "//v2/internal/wspace",
         "//v2/label",
         "//v2/merger",

@@ -82,6 +82,8 @@ go_test(
         "//language",
         "//repo",
         "//resolve",
+        "//v2/compat",
+        "//v2/config",
         "//v2/label",
         "//v2/merger",
         "//v2/rule",

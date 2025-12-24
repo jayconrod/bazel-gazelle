@@ -23,11 +23,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
 
@@ -46,7 +47,7 @@ func TestGenerateRules(t *testing.T) {
 
 	c, lang, _ := testConfig(t, "testdata")
 
-	walk.Walk(c, []config.Configurer{lang}, []string{"testdata"}, walk.VisitAllUpdateSubdirsMode, func(dir, rel string, c *config.Config, update bool, oldFile *rule.File, subdirs, regularFiles, genFiles []string) {
+	walk.Walk(c, []config.Configurer{compat.MustConfigurerV2(lang)}, []string{"testdata"}, walk.VisitAllUpdateSubdirsMode, func(dir, rel string, c *config.Config, update bool, oldFile *rule.File, subdirs, regularFiles, genFiles []string) {
 		isTest := false
 		for _, name := range regularFiles {
 			if name == "BUILD.want" {
@@ -434,15 +435,15 @@ func TestRuleName(t *testing.T) {
 func testConfig(t *testing.T, repoRoot string) (*config.Config, language.Language, []config.Configurer) {
 	cexts := []config.Configurer{
 		&config.CommonConfigurer{},
-		&walk.Configurer{},
-		&resolve.Configurer{},
+		compat.MustConfigurerV2(&walk.Configurer{}),
+		compat.MustConfigurerV2(&resolve.Configurer{}),
 	}
 	lang := NewLanguage()
 	c := testtools.NewTestConfig(t, cexts, []language.Language{lang}, []string{
 		"-build_file_name=BUILD.old",
 		"-repo_root=" + repoRoot,
 	})
-	cexts = append(cexts, lang)
+	cexts = append(cexts, compat.MustConfigurerV2(lang))
 	return c, lang, cexts
 }
 
@@ -451,9 +452,9 @@ func testConfig(t *testing.T, repoRoot string) (*config.Config, language.Languag
 // values of private attributes with simple string comparison.
 func convertImportsAttrs(f *rule.File) {
 	for _, r := range f.Rules {
-		v := r.PrivateAttr(config.GazelleImportsKey)
+		v := r.PrivateAttr(importsKey)
 		if v != nil {
-			r.SetAttr(config.GazelleImportsKey, v)
+			r.SetAttr(importsKey, v)
 		}
 	}
 }

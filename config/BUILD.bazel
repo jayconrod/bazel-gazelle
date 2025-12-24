@@ -9,8 +9,7 @@ go_library(
     importpath = "github.com/bazelbuild/bazel-gazelle/config",
     visibility = ["//visibility:public"],
     deps = [
-        "//internal/module",
-        "//internal/wspace",
+        "//v2/config",
         "//v2/rule",
     ],
 )

@@ -21,10 +21,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
@@ -48,13 +49,13 @@ func testConfig(t *testing.T, args ...string) (*config.Config, []language.Langua
 
 	cexts := []config.Configurer{
 		&config.CommonConfigurer{},
-		&walk.Configurer{},
-		&resolve.Configurer{},
+		compat.MustConfigurerV2(&walk.Configurer{}),
+		compat.MustConfigurerV2(&resolve.Configurer{}),
 	}
 	langs := []language.Language{proto.NewLanguage(), NewLanguage()}
 	c := testtools.NewTestConfig(t, cexts, langs, args)
 	for _, lang := range langs {
-		cexts = append(cexts, lang)
+		cexts = append(cexts, compat.MustConfigurerV2(lang))
 	}
 	return c, langs, cexts
 }
@@ -98,7 +99,14 @@ func TestDirectives(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cext := range cexts {
-		cext.Configure(c, "test", f)
+		err := cext.Configure(t.Context(), config.ConfigureArgs{
+			Config: c,
+			Rel:    "test",
+			File:   f,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	gc := getGoConfig(c)
 	for _, tag := range []string{"foo", "bar", "gc"} {
@@ -141,7 +149,14 @@ func TestDirectives(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cext := range cexts {
-		cext.Configure(c, "test/sub", f)
+		err := cext.Configure(t.Context(), config.ConfigureArgs{
+			Config: c,
+			Rel:    "test/sub",
+			File:   f,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	gc = getGoConfig(c)
 	if gc.goGrpcCompilersSet {
@@ -168,7 +183,14 @@ func TestVendorConfig(t *testing.T) {
 	gc.importMapPrefix = "bad-importmap-prefix"
 	gc.importMapPrefixRel = ""
 	for _, cext := range cexts {
-		cext.Configure(c, "x/vendor", nil)
+		err := cext.Configure(t.Context(), config.ConfigureArgs{
+			Config: c,
+			Rel:    "x/vendor",
+			File:   nil,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	gc = getGoConfig(c)
 	if gc.prefix != "" {
@@ -258,7 +280,14 @@ load("@io_bazel_rules_go//proto:go_proto_library.bzl", "go_proto_library")
 				}
 			}
 			for _, cext := range cexts {
-				cext.Configure(c, tc.rel, f)
+				err := cext.Configure(t.Context(), config.ConfigureArgs{
+					Config: c,
+					Rel:    tc.rel,
+					File:   f,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			pc = proto.GetProtoConfig(c)
 			if pc.Mode != tc.want {
@@ -296,7 +325,14 @@ gazelle(
 				t.Fatal(err)
 			}
 			for _, cext := range cexts {
-				cext.Configure(c, "x", f)
+				err := cext.Configure(t.Context(), config.ConfigureArgs{
+					Config: c,
+					Rel:    "x",
+					File:   f,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			gc := getGoConfig(c)
 			if !gc.prefixSet {

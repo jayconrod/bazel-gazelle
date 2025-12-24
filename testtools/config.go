@@ -18,6 +18,8 @@ package testtools
 import (
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	configv2 "github.com/bazel-contrib/bazel-gazelle/v2/config"
 	v2 "github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
@@ -32,5 +34,13 @@ import (
 //
 // Deprecated: Use github.com/bazel-contrib/bazel-gazelle/v2/testtools.NewTestConfig instead.
 func NewTestConfig(t *testing.T, cexts []config.Configurer, langs []language.Language, args []string) *config.Config {
-	return v2.NewTestConfig(t, cexts, langs, args)
+	cextsv2 := make([]configv2.Configurer, len(cexts))
+	for i, cext := range cexts {
+		cextv2, ok := compat.ConfigurerV2(cext)
+		if !ok {
+			panic("could not convert configurer to v2 interface")
+		}
+		cextsv2[i] = cextv2
+	}
+	return v2.NewTestConfig(t, cextsv2, langs, args)
 }

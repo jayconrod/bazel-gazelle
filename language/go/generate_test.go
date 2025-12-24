@@ -23,10 +23,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
 	bzl "github.com/bazelbuild/buildtools/build"
@@ -78,7 +78,14 @@ func TestGenerateRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cext := range cexts {
-		cext.Configure(c, "", f)
+		err := cext.Configure(t.Context(), config.ConfigureArgs{
+			Config: c,
+			Rel:    "",
+			File:   f,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	var loads []rule.LoadInfo
@@ -358,9 +365,9 @@ func prebuiltProtoRules() []*rule.Rule {
 // values of private attributes with simple string comparison.
 func convertImportsAttrs(f *rule.File) {
 	for _, r := range f.Rules {
-		v := r.PrivateAttr(config.GazelleImportsKey)
+		v := r.PrivateAttr(importsKey)
 		if v != nil {
-			r.SetAttr(config.GazelleImportsKey, v)
+			r.SetAttr(importsKey, v)
 		}
 	}
 }

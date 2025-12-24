@@ -29,12 +29,13 @@ import (
 	"syscall"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/profile"
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/internal/wspace"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	gzflag "github.com/bazelbuild/bazel-gazelle/flag"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
@@ -73,6 +74,7 @@ func getUpdateConfig(c *config.Config) *updateConfig {
 }
 
 var _ config.Configurer = (*UpdateConfigurer)(nil)
+var _ compat.FlagConfigurer = (*UpdateConfigurer)(nil)
 
 type UpdateConfigurer struct {
 	mode           string
@@ -224,7 +226,9 @@ func (ucr *UpdateConfigurer) CheckFlags(fs *flag.FlagSet, c *config.Config) erro
 
 func (ucr *UpdateConfigurer) KnownDirectives() []string { return nil }
 
-func (ucr *UpdateConfigurer) Configure(c *config.Config, rel string, f *rule.File) {}
+func (ucr *UpdateConfigurer) Configure(ctx context.Context, args config.ConfigureArgs) error {
+	return nil
+}
 
 // visitRecord stores information about a directory visited with
 // packages.Walk.
@@ -262,17 +266,21 @@ var genericLoads = []rule.LoadInfo{
 
 func Update(ctx context.Context, exts []any, wd string, args []string) (err error) {
 	cexts := make([]config.Configurer, 0, len(exts))
+	flagExts := make([]compat.FlagConfigurer, 0, len(exts))
 	languages := make([]language.Language, 0, len(exts))
 	for _, ext := range exts {
-		if cext, ok := ext.(config.Configurer); ok {
+		if cext, ok := compat.ConfigurerV2(ext); ok {
 			cexts = append(cexts, cext)
+		}
+		if flagExt, ok := ext.(compat.FlagConfigurer); ok {
+			flagExts = append(flagExts, flagExt)
 		}
 		if lang, ok := ext.(language.Language); ok {
 			languages = append(languages, lang)
 		}
 	}
 
-	c, err := newFixUpdateConfiguration(wd, args, cexts)
+	c, err := newFixUpdateConfiguration(wd, args, flagExts)
 	if err != nil {
 		return err
 	}
@@ -572,7 +580,7 @@ func lookupMapKindReplacement(kindMap map[string]config.MappedKind, kind string)
 	return mapped, nil
 }
 
-func newFixUpdateConfiguration(wd string, args []string, cexts []config.Configurer) (*config.Config, error) {
+func newFixUpdateConfiguration(wd string, args []string, cexts []compat.FlagConfigurer) (*config.Config, error) {
 	c := config.New()
 	c.WorkDir = wd
 

@@ -18,6 +18,7 @@ limitations under the License.
 package walk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -27,9 +28,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 )
 
 // Mode determines which directories Walk visits and which directories
@@ -546,7 +547,13 @@ func configure(cexts []config.Configurer, knownDirectives map[string]bool, c *co
 	}
 	c.Exts[walkNameCached] = wc
 	for _, cext := range cexts {
-		cext.Configure(c, rel, f)
+		// TODO(v2): plumb context
+		// TODO(v2): handle error
+		_ = cext.Configure(context.TODO(), config.ConfigureArgs{
+			Config: c,
+			Rel:    rel,
+			File:   f,
+		})
 	}
 }
 

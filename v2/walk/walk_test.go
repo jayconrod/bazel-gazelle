@@ -17,6 +17,7 @@ package walk
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -25,9 +26,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -49,8 +51,9 @@ func TestConfigureCallbackOrder(t *testing.T) {
 	t.Run("Walk", func(t *testing.T) {
 		var configureRels, callbackRels []string
 		c, cexts := testConfig(t, dir)
-		cexts = append(cexts, &testConfigurer{func(_ *config.Config, rel string, _ *rule.File) {
-			configureRels = append(configureRels, rel)
+		cexts = append(cexts, &testConfigurer{func(_ context.Context, args config.ConfigureArgs) error {
+			configureRels = append(configureRels, args.Rel)
+			return nil
 		}})
 		Walk(c, cexts, []string{dir}, VisitAllUpdateSubdirsMode, func(_ string, rel string, _ *config.Config, _ bool, _ *rule.File, _, _, _ []string) {
 			callbackRels = append(callbackRels, rel)
@@ -61,8 +64,9 @@ func TestConfigureCallbackOrder(t *testing.T) {
 	t.Run("Walk2", func(t *testing.T) {
 		var configureRels, callbackRels []string
 		c, cexts := testConfig(t, dir)
-		cexts = append(cexts, &testConfigurer{func(_ *config.Config, rel string, _ *rule.File) {
-			configureRels = append(configureRels, rel)
+		cexts = append(cexts, &testConfigurer{func(_ context.Context, args config.ConfigureArgs) error {
+			configureRels = append(configureRels, args.Rel)
+			return nil
 		}})
 		err := Walk2(c, cexts, []string{dir}, VisitAllUpdateSubdirsMode, func(args Walk2FuncArgs) Walk2FuncResult {
 			callbackRels = append(callbackRels, args.Rel)
@@ -724,8 +728,9 @@ func TestRelsToVisit(t *testing.T) {
 	var configuredRels, visitedRels, updatedRels []string
 	c, cexts := testConfig(t, dir)
 	cexts = append(cexts, &testConfigurer{
-		configure: func(_ *config.Config, rel string, _ *rule.File) {
-			configuredRels = append(configuredRels, rel)
+		configure: func(_ context.Context, args config.ConfigureArgs) error {
+			configuredRels = append(configuredRels, args.Rel)
+			return nil
 		},
 	})
 	updateDir := filepath.Join(dir, "update")
@@ -889,7 +894,7 @@ func TestGetDirInfoErrorOnParent(t *testing.T) {
 
 func testConfig(t *testing.T, dir string) (*config.Config, []config.Configurer) {
 	args := []string{"-repo_root", dir}
-	cexts := []config.Configurer{&config.CommonConfigurer{}, &Configurer{}}
+	cexts := []config.Configurer{&config.CommonConfigurer{}, compat.MustConfigurerV2(&Configurer{})}
 	c := testtools.NewTestConfig(t, cexts, nil, args)
 	return c, cexts
 }
@@ -897,17 +902,13 @@ func testConfig(t *testing.T, dir string) (*config.Config, []config.Configurer) 
 var _ config.Configurer = (*testConfigurer)(nil)
 
 type testConfigurer struct {
-	configure func(c *config.Config, rel string, f *rule.File)
+	configure func(ctx context.Context, args config.ConfigureArgs) error
 }
-
-func (*testConfigurer) RegisterFlags(_ *flag.FlagSet, _ string, _ *config.Config) {}
-
-func (*testConfigurer) CheckFlags(_ *flag.FlagSet, _ *config.Config) error { return nil }
 
 func (*testConfigurer) KnownDirectives() []string { return nil }
 
-func (tc *testConfigurer) Configure(c *config.Config, rel string, f *rule.File) {
-	tc.configure(c, rel, f)
+func (tc *testConfigurer) Configure(ctx context.Context, args config.ConfigureArgs) error {
+	return tc.configure(ctx, args)
 }
 
 // BenchmarkWalk measures how long it takes Walk to traverse a synthetic repo.
@@ -963,22 +964,18 @@ func BenchmarkWalk(b *testing.B) {
 	}
 	createDir(rootDir, 0)
 
-	cexts := []config.Configurer{&Configurer{}}
+	cext := &Configurer{}
 	c := config.New()
 	c.RepoRoot = rootDir
 	c.RepoRoot = rootDir
 	c.IndexLibraries = true
 	fs := flag.NewFlagSet("gazelle", flag.ContinueOnError)
-	for _, cext := range cexts {
-		cext.RegisterFlags(fs, "update", c)
-	}
+	cext.RegisterFlags(fs, "update", c)
 	args := []string{rootDir}
 	if err := fs.Parse(args); err != nil {
 		b.Fatal(err)
 	}
-	for _, cext := range cexts {
-		cext.CheckFlags(fs, c)
-	}
+	cext.CheckFlags(fs, c)
 
 	// Benchmark calling Walk with a trivial callback function.
 	wf := func(dir, rel string, c *config.Config, update bool, f *rule.File, subdirs, regularFiles, genFiles []string) {
