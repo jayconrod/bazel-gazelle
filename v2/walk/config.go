@@ -17,6 +17,7 @@ package walk
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,8 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	bzl "github.com/bazelbuild/buildtools/build"
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -142,22 +143,23 @@ func (*Configurer) KnownDirectives() []string {
 	return []string{"build_file_name", "generation_mode", "exclude", "follow", "ignore"}
 }
 
-func (cr *Configurer) Configure(c *config.Config, rel string, f *rule.File) {
-	if c.Exts[walkNameCached] != nil {
+func (cr *Configurer) Configure(ctx context.Context, args config.ConfigureArgs) error {
+	if args.Config.Exts[walkNameCached] != nil {
 		// A normal Configurer implementation would process directives and set
 		// c.Exts[walkName] here. However, we've parallelized the tree walk and
 		// processed the configuration ahead of time in configureForWalk. So instead,
 		// the caller of this method (configure) sets c.Exts[walkNameCache] to the
 		// preprocessed configuration. We copy it to c.Exts[walkName] instead of
 		// re-processing directives.
-		c.Exts[walkName] = c.Exts[walkNameCached]
-		delete(c.Exts, walkNameCached)
+		args.Config.Exts[walkName] = args.Config.Exts[walkNameCached]
+		delete(args.Config.Exts, walkNameCached)
 	} else {
 		// In some unit tests, c.Exts[walkNameCached] is not set.
 		// Process directives normally using the same code.
-		c.Exts[walkName] = configureForWalk(getWalkConfig(c), rel, f)
+		args.Config.Exts[walkName] = configureForWalk(getWalkConfig(args.Config), args.Rel, args.File)
 	}
-	c.ValidBuildFileNames = getWalkConfig(c).validBuildFileNames
+	args.Config.ValidBuildFileNames = getWalkConfig(args.Config).validBuildFileNames
+	return nil
 }
 
 func configureForWalk(parent *walkConfig, rel string, f *rule.File) *walkConfig {

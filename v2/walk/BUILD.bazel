@@ -11,7 +11,6 @@ go_library(
     importpath = "github.com/bazel-contrib/bazel-gazelle/v2/walk",
     visibility = ["//visibility:public"],
     deps = [
-        "//config",
         "//flag",
         "//v2/config",
         "//v2/pathtools",
@@ -29,7 +28,6 @@ go_test(
     ],
     embed = [":walk"],
     deps = [
-        "//config",
         "//v2/compat",
         "//v2/config",
         "//v2/rule",

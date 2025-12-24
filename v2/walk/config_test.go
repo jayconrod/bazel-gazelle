@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
@@ -74,7 +74,13 @@ func TestConfigurerDirectives(t *testing.T) {
 	if err := cc.CheckFlags(nil, c); err != nil {
 		t.Errorf("CheckFlags: %v", err)
 	}
-	cc.Configure(c, "", f)
+	err = cc.Configure(t.Context(), config.ConfigureArgs{
+		Config: c,
+		File:   f,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"x", "y"}
 	if !reflect.DeepEqual(c.ValidBuildFileNames, want) {
 		t.Errorf("for ValidBuildFileNames, got %#v, want %#v", c.ValidBuildFileNames, want)

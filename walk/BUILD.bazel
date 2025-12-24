@@ -14,6 +14,7 @@ go_library(
         "//config",
         "//v2/compat",
         "//v2/config",
+        "//v2/rule",
         "//v2/walk",
     ],
 )

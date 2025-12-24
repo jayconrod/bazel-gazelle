@@ -15,7 +15,40 @@ limitations under the License.
 
 package walk
 
-import v2 "github.com/bazel-contrib/bazel-gazelle/v2/walk"
+import (
+	"context"
+	"flag"
+	"log"
+
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
+	v2 "github.com/bazel-contrib/bazel-gazelle/v2/walk"
+)
 
 // Deprecated: Use github.com/bazel-contrib/bazel-gazelle/v2/walk.Configurer instead.
-type Configurer = v2.Configurer
+type Configurer struct {
+	v2 v2.Configurer
+}
+
+func (cc *Configurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
+	cc.v2.RegisterFlags(fs, cmd, c)
+}
+
+func (cc *Configurer) CheckFlags(fs *flag.FlagSet, c *config.Config) error {
+	return cc.v2.CheckFlags(fs, c)
+}
+
+func (cc *Configurer) KnownDirectives() []string {
+	return cc.v2.KnownDirectives()
+}
+
+func (cc *Configurer) Configure(c *config.Config, rel string, f *rule.File) {
+	err := cc.v2.Configure(context.Background(), config.ConfigureArgs{
+		Config: c,
+		Rel:    rel,
+		File:   f,
+	})
+	if err != nil {
+		log.Print(err)
+	}
+}

@@ -49,7 +49,7 @@ func testConfig(t *testing.T, args ...string) (*config.Config, []language.Langua
 
 	cexts := []config.Configurer{
 		&config.CommonConfigurer{},
-		compat.MustConfigurerV2(&walk.Configurer{}),
+		&walk.Configurer{},
 		compat.MustConfigurerV2(&resolve.Configurer{}),
 	}
 	langs := []language.Language{proto.NewLanguage(), NewLanguage()}
