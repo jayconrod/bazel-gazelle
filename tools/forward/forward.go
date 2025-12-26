@@ -84,7 +84,7 @@ func run(wd string, args []string) error {
 			if err := shimPackage(srcDir, dstPkg); err != nil {
 				return err
 			}
-			if err := rewriteAllImports(modRootDir, srcPkg, dstPkg); err != nil {
+			if err := rewriteAllImports(filepath.Join(modRootDir, "v2"), srcPkg, dstPkg); err != nil {
 				return err
 			}
 		}
