@@ -40,6 +40,7 @@ import (
 	gzflag "github.com/bazelbuild/bazel-gazelle/flag"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
+	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 	"github.com/bazelbuild/buildtools/build"
 )
 
@@ -290,7 +291,7 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 	loads := genericLoads
 	for _, lang := range languages {
 		for kind, info := range lang.Kinds() {
-			mrslv.AddBuiltin(kind, lang)
+			mrslv.AddBuiltin(kind, indexResolverFromV1(lang))
 			kinds[kind] = info
 		}
 		if moduleAwareLang, ok := lang.(language.ModuleAwareLanguage); ok {
@@ -299,7 +300,16 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 			loads = append(loads, lang.Loads()...)
 		}
 	}
-	ruleIndex := resolve.NewRuleIndex(mrslv.Resolver, exts...)
+	var finders []resolve.Finder
+	for _, ext := range exts {
+		if f, ok := ext.(resolve.Finder); ok {
+			finders = append(finders, f)
+		} else if cr, ok := ext.(resolvev1.CrossResolver); ok {
+			f := compat.FinderV2(cr)
+			finders = append(finders, f)
+		}
+	}
+	ruleIndex := resolve.NewRuleIndex(mrslv.Indexer, finders)
 
 	if err = fixRepoFiles(c, loads); err != nil {
 		return err
@@ -514,7 +524,18 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 		for i, r := range v.rules {
 			from := label.New(c.RepoName, v.pkgRel, r.Name())
 			if rslv := mrslv.Resolver(r, v.pkgRel); rslv != nil {
-				rslv.Resolve(v.c, ruleIndex, rc, r, v.imports[i], from)
+				// TODO(v2): plumb context, handle error
+				err := rslv.Resolve(context.TODO(), resolve.ResolveArgs{
+					Config:      v.c,
+					Index:       ruleIndex,
+					Rule:        r,
+					From:        from,
+					RemoteCache: rc,
+					Imports:     v.imports[i],
+				})
+				if err != nil {
+					log.Print(err)
+				}
 			}
 		}
 		merger.MergeFile(v.file, v.empty, v.rules, merger.PostResolve,

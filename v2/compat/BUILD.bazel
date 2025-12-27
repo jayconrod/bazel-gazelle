@@ -7,7 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config",
+        "//resolve",
         "//v2/config",
+        "//v2/label",
+        "//v2/resolve",
     ],
 )
 

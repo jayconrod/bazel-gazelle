@@ -22,7 +22,9 @@ import (
 	"flag"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	configv1 "github.com/bazelbuild/bazel-gazelle/config"
+	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
 // FlagConfigurer allows an extension to define and validate command-line flags.
@@ -87,6 +89,56 @@ func (c configurerAdapter) KnownDirectives() []string {
 func (c configurerAdapter) Configure(ctx context.Context, args config.ConfigureArgs) error {
 	c.v1.Configure(args.Config, args.Rel, args.File)
 	return nil
+}
+
+func IndexerV2(v1 resolvev1.Resolver) resolve.Indexer {
+	return indexerAdapter{v1: v1}
+}
+
+type indexerAdapter struct {
+	v1 resolvev1.Resolver
+}
+
+var _ resolve.Indexer = indexerAdapter{}
+
+// TODO(v2): remove
+func (i indexerAdapter) Name() string {
+	return i.v1.Name()
+}
+
+func (i indexerAdapter) Imports(ctx context.Context, args resolve.ImportsArgs) (resolve.ImportsResult, error) {
+	imps := i.v1.Imports(args.Config, args.Rule, args.File)
+	embeds := i.v1.Embeds(args.Rule, args.From)
+	return resolve.ImportsResult{
+		Imports:       imps,
+		Embeds:        embeds,
+		NotImportable: imps == nil,
+	}, nil
+}
+
+func ResolverV2(v1 resolvev1.Resolver) resolve.Resolver {
+	return resolverAdapter{v1: v1}
+}
+
+type resolverAdapter struct {
+	v1 resolvev1.Resolver
+}
+
+func (r resolverAdapter) Resolve(ctx context.Context, args resolve.ResolveArgs) error {
+	r.v1.Resolve(args.Config, resolvev1.WrapRuleIndexV2(args.Index), args.RemoteCache, args.Rule, args.Imports, args.From)
+	return nil
+}
+
+func FinderV2(v1 resolvev1.CrossResolver) resolve.Finder {
+	return finderAdapter{v1: v1}
+}
+
+type finderAdapter struct {
+	v1 resolvev1.CrossResolver
+}
+
+func (a finderAdapter) Find(ctx context.Context, args resolve.FindArgs) []resolve.FindResult {
+	return a.v1.CrossResolve(args.Config, resolvev1.WrapRuleIndexV2(args.Index), args.Import, args.Lang)
 }
 
 func Must[T any](v T, ok bool) T {
