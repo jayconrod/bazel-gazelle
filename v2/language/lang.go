@@ -144,13 +144,13 @@ type FixArgs struct {
 	File *rule.File
 }
 
-type OnStart interface {
+type OnStarter interface {
 	// Called when Gazelle starts, before walking the directory tree and before
 	// Configure is called on any extension.
 	OnStart(context.Context) error
 }
 
-type OnFinish interface {
+type OnFinisher interface {
 	// Called after Gazelle has resolved dependencies on all rules and written
 	// updated build files.
 	OnFinish(context.Context) error
