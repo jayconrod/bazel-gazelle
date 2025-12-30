@@ -229,6 +229,40 @@ func (l Label) BzlExpr() bzl.Expr {
 	}
 }
 
+// Compare is a comparison function, for use with the sorting functions in
+// slices. It follows the same order as
+// [github.com/bazelbuild/buildtools/build.SortStringList]:
+//
+// 0. Empty label.
+// 1. Labels within the same package (without @ or //).
+// 2. Labels within the same repo (with //, without @).
+// 3. Labels with a repo name (with @).
+func Compare(a, b Label) int {
+	phase := func(l Label) int {
+		if l.Repo != "" {
+			return 3
+		} else if l.Pkg != "" {
+			return 2
+		} else if l.Name != "" {
+			return 1
+		} else {
+			return 0
+		}
+	}
+	lphase := phase(a)
+	rphase := phase(b)
+	if c := lphase - rphase; c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.Repo, b.Repo); c != 0 {
+		return c
+	}
+	if c := strings.Compare(a.Pkg, b.Pkg); c != 0 {
+		return c
+	}
+	return strings.Compare(a.Name, b.Name)
+}
+
 var nonWordRe = regexp.MustCompile(`\W+`)
 
 // ImportPathToBazelRepoName converts a Go import path into a bazel repo name

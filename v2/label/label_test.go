@@ -152,3 +152,54 @@ func TestParseStringRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCompare(t *testing.T) {
+	for _, tc := range []struct {
+		desc, a, b string
+		want       int
+	}{
+		{desc: "empty_empty", want: 0},
+		{desc: "empty_rel", b: ":a", want: -1},
+		{desc: "empty_abs", b: "//a", want: -1},
+		{desc: "empty_repo", b: "@a", want: -1},
+		{desc: "rel_same", a: ":a", b: ":a", want: 0},
+		{desc: "rel_rel", a: ":a", b: ":b", want: -1},
+		{desc: "rel_abs", a: ":a", b: "//b", want: -1},
+		{desc: "rel_repo", a: ":a", b: "@b", want: -1},
+		{desc: "abs_same", a: "//a", b: "//b", want: -1},
+		{desc: "abs_abs", a: "//a", b: "//b", want: -1},
+		{desc: "abs_repo", a: "//a", b: "@b", want: -1},
+		{desc: "repo_same", a: "@a", b: "@a", want: 0},
+		{desc: "repo_repo", a: "@a", b: "@b", want: -1},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			parse := func(s string) Label {
+				if s == "" {
+					return NoLabel
+				}
+				l, err := Parse(s)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return l
+			}
+			sgn := func(n int) int {
+				if n < 0 {
+					return -1
+				} else if n == 0 {
+					return 0
+				} else {
+					return 1
+				}
+			}
+			a := parse(tc.a)
+			b := parse(tc.b)
+			if got := sgn(Compare(a, b)); got != tc.want {
+				t.Fatalf("Compare(%q, %q): got %d; want %d", tc.a, tc.b, got, tc.want)
+			}
+			if got := sgn(Compare(b, a)); got != -tc.want {
+				t.Fatalf("Compare(%q, %q): got %d; want %d", tc.b, tc.a, got, -tc.want)
+			}
+		})
+	}
+}
