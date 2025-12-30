@@ -22,7 +22,9 @@ import (
 	"flag"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	configv1 "github.com/bazelbuild/bazel-gazelle/config"
 	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 )
@@ -139,6 +141,137 @@ type finderAdapter struct {
 
 func (a finderAdapter) Find(ctx context.Context, args resolve.FindArgs) []resolve.FindResult {
 	return a.v1.CrossResolve(args.Config, resolvev1.WrapRuleIndexV2(args.Index), args.Import, args.Lang)
+}
+
+type CompleteLanguage interface {
+	language.Language
+	language.Generator
+	language.Fixer
+	language.OnStarter
+	language.OnFinisher
+	config.Configurer
+	resolve.Indexer
+	resolve.Resolver
+	resolve.Finder
+}
+
+type completeLanguageAdapter struct {
+	language.Language
+	language.Generator
+	language.Fixer
+	language.OnStarter
+	language.OnFinisher
+	config.Configurer
+	resolve.Indexer
+	resolve.Resolver
+	resolve.Finder
+}
+
+func (a completeLanguageAdapter) Name() string {
+	return a.Language.Name()
+}
+
+func LanguageWithDefaults(v language.Language) CompleteLanguage {
+	adapter := completeLanguageAdapter{Language: v}
+	if gen, ok := v.(language.Generator); ok {
+		adapter.Generator = gen
+	} else {
+		adapter.Generator = noopGenerator{}
+	}
+	if fix, ok := v.(language.Fixer); ok {
+		adapter.Fixer = fix
+	} else {
+		adapter.Fixer = noopFixer{}
+	}
+	if start, ok := v.(language.OnStarter); ok {
+		adapter.OnStarter = start
+	} else {
+		adapter.OnStarter = noopOnStarter{}
+	}
+	if finish, ok := v.(language.OnFinisher); ok {
+		adapter.OnFinisher = finish
+	} else {
+		adapter.OnFinisher = noopOnFinisher{}
+	}
+	if cfg, ok := v.(config.Configurer); ok {
+		adapter.Configurer = cfg
+	} else {
+		adapter.Configurer = noopConfigurer{}
+	}
+	if idx, ok := v.(resolve.Indexer); ok {
+		adapter.Indexer = idx
+	} else {
+		adapter.Indexer = noopIndexer{Language: v}
+	}
+	if res, ok := v.(resolve.Resolver); ok {
+		adapter.Resolver = res
+	} else {
+		adapter.Resolver = noopResolver{}
+	}
+	if find, ok := v.(resolve.Finder); ok {
+		adapter.Finder = find
+	} else {
+		adapter.Finder = noopFinder{}
+	}
+	return adapter
+}
+
+type noopGenerator struct{}
+
+func (noopGenerator) Kinds() map[string]rule.KindInfo {
+	return nil
+}
+
+func (noopGenerator) Generate(_ context.Context, _ language.GenerateArgs) (language.GenerateResult, error) {
+	return language.GenerateResult{}, nil
+}
+
+type noopFixer struct{}
+
+func (noopFixer) Fix(_ context.Context, _ language.FixArgs) error {
+	return nil
+}
+
+type noopOnStarter struct{}
+
+func (noopOnStarter) OnStart(_ context.Context) error {
+	return nil
+}
+
+type noopOnFinisher struct{}
+
+func (noopOnFinisher) OnFinish(_ context.Context) error {
+	return nil
+}
+
+type noopConfigurer struct{}
+
+func (noopConfigurer) KnownDirectives() []string {
+	return nil
+}
+
+func (noopConfigurer) Configure(_ context.Context, _ config.ConfigureArgs) error {
+	return nil
+}
+
+type noopIndexer struct {
+	language.Language
+}
+
+func (noopIndexer) Imports(_ context.Context, _ resolve.ImportsArgs) (resolve.ImportsResult, error) {
+	return resolve.ImportsResult{}, nil
+}
+
+type noopResolver struct{}
+
+func (noopResolver) Resolve(_ context.Context, _ resolve.ResolveArgs) error {
+	return nil
+}
+
+type noopFinder struct{}
+
+func (noopFinder) Find(_ context.Context, _ resolve.FindArgs) []resolve.FindResult {
+	return nil
 }
 
 func Must[T any](v T, ok bool) T {
