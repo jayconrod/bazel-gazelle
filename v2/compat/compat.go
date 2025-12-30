@@ -26,6 +26,7 @@ import (
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	configv1 "github.com/bazelbuild/bazel-gazelle/config"
+	languagev1 "github.com/bazelbuild/bazel-gazelle/language"
 	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
@@ -143,6 +144,64 @@ func (a finderAdapter) Find(ctx context.Context, args resolve.FindArgs) []resolv
 	return a.v1.CrossResolve(args.Config, resolvev1.WrapRuleIndexV2(args.Index), args.Import, args.Lang)
 }
 
+type generatorAdapter struct {
+	v1 languagev1.Language
+}
+
+func (g generatorAdapter) Kinds() map[string]rule.KindInfo {
+	return g.v1.Kinds()
+}
+
+func (g generatorAdapter) Generate(ctx context.Context, args language.GenerateArgs) (language.GenerateResult, error) {
+	result := g.v1.GenerateRules(languagev1.GenerateArgs{
+		Config:       args.Config,
+		Dir:          args.Dir,
+		Rel:          args.Rel,
+		File:         args.File,
+		Subdirs:      args.Subdirs,
+		RegularFiles: args.RegularFiles,
+		GenFiles:     args.GenFiles,
+		OtherEmpty:   args.OtherEmpty,
+		OtherGen:     args.OtherGen,
+	})
+	return language.GenerateResult{
+		Gen:         result.Gen,
+		Empty:       result.Empty,
+		Imports:     result.Imports,
+		RelsToIndex: result.RelsToIndex,
+	}, nil
+}
+
+type fixerAdapter struct {
+	v1 languagev1.Language
+}
+
+func (f fixerAdapter) Fix(ctx context.Context, args language.FixArgs) error {
+	f.v1.Fix(args.Config, args.File)
+	return nil
+}
+
+type onStarterAdapter struct {
+	v1 languagev1.LifecycleManager
+}
+
+func (s onStarterAdapter) OnStart(ctx context.Context) error {
+	s.v1.Before(ctx)
+	return nil
+}
+
+type onFinisherAdapter struct {
+	v1 languagev1.FinishableLanguage
+}
+
+func (f onFinisherAdapter) OnFinish(ctx context.Context) error {
+	f.v1.DoneGeneratingRules()
+	if lifecycle, ok := f.v1.(languagev1.LifecycleManager); ok {
+		lifecycle.AfterResolvingDeps(ctx)
+	}
+	return nil
+}
+
 type CompleteLanguage interface {
 	language.Language
 	language.Generator
@@ -150,6 +209,7 @@ type CompleteLanguage interface {
 	language.OnStarter
 	language.OnFinisher
 	config.Configurer
+	FlagConfigurer
 	resolve.Indexer
 	resolve.Resolver
 	resolve.Finder
@@ -162,6 +222,7 @@ type completeLanguageAdapter struct {
 	language.OnStarter
 	language.OnFinisher
 	config.Configurer
+	FlagConfigurer
 	resolve.Indexer
 	resolve.Resolver
 	resolve.Finder
@@ -198,6 +259,11 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 	} else {
 		adapter.Configurer = noopConfigurer{}
 	}
+	if flag, ok := v.(FlagConfigurer); ok {
+		adapter.FlagConfigurer = flag
+	} else {
+		adapter.FlagConfigurer = noopFlagConfigurer{}
+	}
 	if idx, ok := v.(resolve.Indexer); ok {
 		adapter.Indexer = idx
 	} else {
@@ -210,6 +276,34 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 	}
 	if find, ok := v.(resolve.Finder); ok {
 		adapter.Finder = find
+	} else {
+		adapter.Finder = noopFinder{}
+	}
+	return adapter
+}
+
+func LanguageV2(v languagev1.Language) CompleteLanguage {
+	adapter := completeLanguageAdapter{
+		Language:       v,
+		Generator:      generatorAdapter{v1: v},
+		Fixer:          fixerAdapter{v1: v},
+		Configurer:     configurerAdapter{v1: v},
+		FlagConfigurer: configurerAdapter{v1: v},
+		Indexer:        indexerAdapter{v1: v},
+		Resolver:       resolverAdapter{v1: v},
+	}
+	if lifecycle, ok := v.(languagev1.LifecycleManager); ok {
+		adapter.OnStarter = onStarterAdapter{v1: lifecycle}
+	} else {
+		adapter.OnStarter = noopOnStarter{}
+	}
+	if f, ok := v.(languagev1.FinishableLanguage); ok {
+		adapter.OnFinisher = onFinisherAdapter{v1: f}
+	} else {
+		adapter.OnFinisher = noopOnFinisher{}
+	}
+	if cr, ok := v.(resolvev1.CrossResolver); ok {
+		adapter.Finder = finderAdapter{v1: cr}
 	} else {
 		adapter.Finder = noopFinder{}
 	}
@@ -251,6 +345,15 @@ func (noopConfigurer) KnownDirectives() []string {
 }
 
 func (noopConfigurer) Configure(_ context.Context, _ config.ConfigureArgs) error {
+	return nil
+}
+
+type noopFlagConfigurer struct{}
+
+func (noopFlagConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, cfg *config.Config) {
+}
+
+func (noopFlagConfigurer) CheckFlags(fs *flag.FlagSet, cfg *config.Config) error {
 	return nil
 }
 
