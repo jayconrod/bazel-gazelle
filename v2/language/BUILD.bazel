@@ -1,15 +1,13 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "compat",
-    srcs = ["compat.go"],
-    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/compat",
+    name = "language",
+    srcs = ["lang.go"],
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/language",
     visibility = ["//visibility:public"],
     deps = [
-        "//config",
-        "//resolve",
         "//v2/config",
-        "//v2/resolve",
+        "//v2/rule",
     ],
 )
 
@@ -18,7 +16,7 @@ filegroup(
     testonly = True,
     srcs = [
         "BUILD.bazel",
-        "compat.go",
+        "lang.go",
     ],
     visibility = ["//visibility:public"],
 )
