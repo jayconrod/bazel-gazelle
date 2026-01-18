@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gen_gazelle_binary_main_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/internal/gen_gazelle_binary_main",
+    visibility = ["//visibility:private"],
+    deps = ["@org_golang_x_tools//go/gcexportdata"],
+)
+
+go_binary(
+    name = "gen_gazelle_binary_main",
+    embed = [":gen_gazelle_binary_main_lib"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = [
+        "BUILD.bazel",
+        "main.go",
+    ],
+    visibility = ["//visibility:public"],
+)

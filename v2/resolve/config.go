@@ -123,6 +123,10 @@ var _ config.Configurer = (*Configurer)(nil)
 
 type Configurer struct{}
 
+func (*Configurer) Name() string {
+	return "_resolve"
+}
+
 func (*Configurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
 	c.Exts[resolveName] = &resolveConfig{}
 }

@@ -29,11 +29,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config",
-        "//language",
         "//language/bazel/visibility",
         "//language/go",
         "//language/proto",
         "//v2/cmd/gazelle/update",
+        "//v2/compat",
         "//v2/resolve",
         "//v2/walk",
     ],

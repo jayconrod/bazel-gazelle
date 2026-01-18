@@ -25,26 +25,19 @@ def _gazelle_binary_impl(ctx):
     # Generate a source file with a list of languages. This will get compiled
     # with the rest of the sources in the main package.
     langs_file = go.declare_file(go, "langs.go")
-    langs_content_tpl = """
-package main
-
-import (
-	"github.com/bazelbuild/bazel-gazelle/language"
-
-	{lang_imports}
-)
-
-var languages = []language.Language{{
-	{lang_calls},
-}}
-"""
-    lang_imports = [format_import(d[GoArchive].data.importpath) for d in ctx.attr.languages]
-    lang_calls = [format_call(d[GoArchive].data.importpath) for d in ctx.attr.languages]
-    langs_content = langs_content_tpl.format(
-        lang_imports = "\n\t".join(lang_imports),
-        lang_calls = ",\n\t".join(lang_calls),
+    ctx.actions.run(
+        mnemonic = "GenGazelleBinaryMain",
+        outputs = [langs_file],
+        inputs = ctx.files.languages,
+        executable = ctx.executable._gen_gazelle_binary_main,
+        arguments = ["-o", langs_file.path] + [
+            "{}={}".format(
+                d[GoArchive].data.importpath,
+                d[GoArchive].data.export_file.path,
+            )
+            for d in ctx.attr.languages
+        ],
     )
-    go.actions.write(langs_file, langs_content)
 
     # Build the gazelle binary.
     attr = struct(
@@ -97,6 +90,11 @@ proto extension stores metadata in hidden attributes of generated
             providers = [GoArchive],
             mandatory = True,
             allow_empty = False,
+        ),
+        "_gen_gazelle_binary_main": attr.label(
+            default = "//v2/internal/gen_gazelle_binary_main",
+            executable = True,
+            cfg = "exec",
         ),
         "_go_context_data": attr.label(default = "@io_bazel_rules_go//:go_context_data"),
         # _stdlib is needed for rules_go versions before v0.23.0. After that,

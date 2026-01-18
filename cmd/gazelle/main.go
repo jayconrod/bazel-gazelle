@@ -25,9 +25,9 @@ import (
 	"os"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
 	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
@@ -56,12 +56,12 @@ func main() {
 
 func run(wd string, args []string) error {
 	ctx := context.Background()
-	exts := make([]any, 0, len(languages)+4)
+	exts := make([]compat.CompleteLanguage, 0, len(languages)+4)
 	exts = append(exts,
-		&config.CommonConfigurer{},
-		&update.UpdateConfigurer{},
-		&walk.Configurer{},
-		&resolve.Configurer{})
+		compat.LanguageWithDefaults(&config.CommonConfigurer{}),
+		compat.LanguageWithDefaults(&update.UpdateConfigurer{}),
+		compat.LanguageWithDefaults(&walk.Configurer{}),
+		compat.LanguageWithDefaults(&resolve.Configurer{}))
 	for _, lang := range languages {
 		exts = append(exts, lang)
 	}
@@ -111,29 +111,4 @@ without notice.
 
 `)
 	return flag.ErrHelp
-}
-
-// filterLanguages returns the subset of input languages that pass the config's
-// filter, if any. Gazelle should not generate rules for languages not returned.
-func filterLanguages(c *config.Config, langs []language.Language) []language.Language {
-	if len(c.Langs) == 0 {
-		return langs
-	}
-
-	var result []language.Language
-	for _, inputLang := range langs {
-		if containsLang(c.Langs, inputLang) {
-			result = append(result, inputLang)
-		}
-	}
-	return result
-}
-
-func containsLang(langNames []string, lang language.Language) bool {
-	for _, langName := range langNames {
-		if langName == lang.Name() {
-			return true
-		}
-	}
-	return false
 }

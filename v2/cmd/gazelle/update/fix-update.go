@@ -21,9 +21,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"iter"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -33,14 +35,13 @@ import (
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/internal/wspace"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
 	gzflag "github.com/bazelbuild/bazel-gazelle/flag"
-	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
-	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 	"github.com/bazelbuild/buildtools/build"
 )
 
@@ -84,6 +85,10 @@ type UpdateConfigurer struct {
 	repoConfigPath string
 	cpuProfile     string
 	memProfile     string
+}
+
+func (ucr *UpdateConfigurer) Name() string {
+	return "_update"
 }
 
 func (ucr *UpdateConfigurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
@@ -258,57 +263,27 @@ type visitRecord struct {
 	mappedKindInfo map[string]rule.KindInfo
 }
 
-var genericLoads = []rule.LoadInfo{
-	{
-		Name:    "@bazel_gazelle//:def.bzl",
-		Symbols: []string{"gazelle"},
-	},
-}
-
-func Update(ctx context.Context, exts []any, wd string, args []string) (err error) {
-	cexts := make([]config.Configurer, 0, len(exts))
-	flagExts := make([]compat.FlagConfigurer, 0, len(exts))
-	languages := make([]language.Language, 0, len(exts))
-	for _, ext := range exts {
-		if cext, ok := compat.ConfigurerV2(ext); ok {
-			cexts = append(cexts, cext)
-		}
-		if flagExt, ok := ext.(compat.FlagConfigurer); ok {
-			flagExts = append(flagExts, flagExt)
-		}
-		if lang, ok := ext.(language.Language); ok {
-			languages = append(languages, lang)
-		}
-	}
-
-	c, err := newFixUpdateConfiguration(wd, args, flagExts)
+func Update(ctx context.Context, languages []compat.CompleteLanguage, wd string, args []string) (err error) {
+	c, err := newFixUpdateConfiguration(wd, args, languages)
 	if err != nil {
 		return err
 	}
 
 	mrslv := newMetaResolver()
 	kinds := make(map[string]rule.KindInfo)
-	loads := genericLoads
-	for _, lang := range languages {
-		for kind, info := range lang.Kinds() {
-			mrslv.AddBuiltin(kind, indexResolverFromV1(lang))
-			kinds[kind] = info
-		}
-		if moduleAwareLang, ok := lang.(language.ModuleAwareLanguage); ok {
-			loads = append(loads, moduleAwareLang.ApparentLoads(c.ModuleToApparentName)...)
-		} else {
-			loads = append(loads, lang.Loads()...)
-		}
-	}
-	var finders []resolve.Finder
-	for _, ext := range exts {
-		if f, ok := ext.(resolve.Finder); ok {
-			finders = append(finders, f)
-		} else if cr, ok := ext.(resolvev1.CrossResolver); ok {
-			f := compat.FinderV2(cr)
-			finders = append(finders, f)
+	loads := CollectLoads(c.ModuleToApparentName, languages)
+
+	finders := make([]resolve.Finder, len(languages))
+	configurers := make([]config.Configurer, len(languages))
+	for i, language := range languages {
+		finders[i] = language
+		configurers[i] = language
+		for name, kind := range language.Kinds() {
+			kinds[name] = kind
+			mrslv.AddBuiltin(name, language)
 		}
 	}
+
 	ruleIndex := resolve.NewRuleIndex(mrslv.Indexer, finders)
 
 	if err = fixRepoFiles(c, loads); err != nil {
@@ -318,8 +293,8 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	for _, lang := range languages {
-		if life, ok := lang.(language.LifecycleManager); ok {
-			life.Before(ctx)
+		if err := lang.OnStart(ctx); err != nil {
+			log.Print(err)
 		}
 	}
 
@@ -334,7 +309,7 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 
 	rule.RemoveNoopKeepComments = uc.removeNoopKeepComments || c.ShouldFix
 
-	walkErr := walk.Walk2(c, cexts, uc.dirs, uc.walkMode, func(args walk.Walk2FuncArgs) walk.Walk2FuncResult {
+	walkErr := walk.Walk2(c, configurers, uc.dirs, uc.walkMode, func(args walk.Walk2FuncArgs) walk.Walk2FuncResult {
 		dir := args.Dir
 		rel := args.Rel
 		c := args.Config
@@ -361,8 +336,15 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 
 		// Fix any problems in the file.
 		if f != nil {
-			for _, l := range filterLanguages(c, languages) {
-				l.Fix(c, f)
+			for l := range FilterLanguages(c, languages) {
+				err := l.Fix(ctx, language.FixArgs{
+					Config: c,
+					Rel:    rel,
+					File:   f,
+				})
+				if err != nil {
+					log.Print(err)
+				}
 			}
 		}
 
@@ -370,8 +352,8 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 		var empty, gen []*rule.Rule
 		var imports []interface{}
 		var relsToVisit []string
-		for _, l := range filterLanguages(c, languages) {
-			res := l.GenerateRules(language.GenerateArgs{
+		for l := range FilterLanguages(c, languages) {
+			res, err := l.Generate(ctx, language.GenerateArgs{
 				Config:       c,
 				Dir:          dir,
 				Rel:          rel,
@@ -382,6 +364,10 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 				OtherEmpty:   empty,
 				OtherGen:     gen,
 			})
+			if err != nil {
+				log.Print(err)
+				continue
+			}
 			if len(res.Gen) != len(res.Imports) {
 				log.Panicf("%s: language %s generated %d rules but returned %d imports", rel, l.Name(), len(res.Gen), len(res.Imports))
 			}
@@ -498,8 +484,8 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 	})
 
 	for _, lang := range languages {
-		if finishable, ok := lang.(language.FinishableLanguage); ok {
-			finishable.DoneGeneratingRules()
+		if err := lang.OnResolve(ctx); err != nil {
+			log.Print(err)
 		}
 	}
 
@@ -543,9 +529,10 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 			v.c.AliasMap,
 		)
 	}
+
 	for _, lang := range languages {
-		if life, ok := lang.(language.LifecycleManager); ok {
-			life.AfterResolvingDeps(ctx)
+		if err := lang.OnFinish(ctx); err != nil {
+			log.Print(err)
 		}
 	}
 
@@ -568,6 +555,47 @@ func Update(ctx context.Context, exts []any, wd string, args []string) (err erro
 	}
 
 	return exit
+}
+
+// CollectLoads builds and returns a table of .bzl file labels and the rule
+// kinds that can be loaded from them. Returned labels are adjusted to use the
+// apparent name of the module they come from.
+func CollectLoads(moduleToApparentName func(string) string, languages []compat.CompleteLanguage) []rule.LoadInfo {
+	var loads []rule.LoadInfo
+	loads = append(loads, rule.LoadInfo{
+		Name:    "@bazel_gazelle//:def.bzl",
+		Symbols: []string{"gazelle"},
+	})
+	for _, language := range languages {
+		if apparentLoads := language.ApparentLoads(moduleToApparentName); len(apparentLoads) > 0 {
+			loads = append(loads, apparentLoads...)
+			continue
+		} else {
+			loadMap := make(map[label.Label][]string)
+			for name, info := range language.Kinds() {
+				if info.LoadedFrom == label.NoLabel {
+					continue
+				}
+				i, _ := slices.BinarySearch(loadMap[info.LoadedFrom], name)
+				loadMap[info.LoadedFrom] = slices.Insert(loadMap[info.LoadedFrom], i, name)
+			}
+			labels := make([]label.Label, 0, len(loadMap))
+			for l := range loadMap {
+				if apparent := moduleToApparentName(l.Repo); apparent != "" {
+					l.Repo = apparent
+				}
+				labels = append(labels, l)
+			}
+			slices.SortFunc(labels, label.Compare)
+			for _, l := range labels {
+				loads = append(loads, rule.LoadInfo{
+					Name:    l.String(),
+					Symbols: loadMap[l],
+				})
+			}
+		}
+	}
+	return loads
 }
 
 // lookupMapKindReplacement finds a mapped replacement for rule kind `kind`, resolving transitively.
@@ -601,7 +629,7 @@ func lookupMapKindReplacement(kindMap map[string]config.MappedKind, kind string)
 	return mapped, nil
 }
 
-func newFixUpdateConfiguration(wd string, args []string, cexts []compat.FlagConfigurer) (*config.Config, error) {
+func newFixUpdateConfiguration(wd string, args []string, cexts []compat.CompleteLanguage) (*config.Config, error) {
 	c := config.New()
 	c.WorkDir = wd
 
@@ -827,27 +855,16 @@ func isDirErr(err error) bool {
 	return errors.As(err, &pe) && pe.Err == syscall.EISDIR
 }
 
-// filterLanguages returns the subset of input languages that pass the config's
+// FilterLanguages returns the subset of input languages that pass the config's
 // filter, if any. Gazelle should not generate rules for languages not returned.
-func filterLanguages(c *config.Config, langs []language.Language) []language.Language {
-	if len(c.Langs) == 0 {
-		return langs
-	}
-
-	var result []language.Language
-	for _, inputLang := range langs {
-		if containsLang(c.Langs, inputLang) {
-			result = append(result, inputLang)
+func FilterLanguages(c *config.Config, langs []compat.CompleteLanguage) iter.Seq[compat.CompleteLanguage] {
+	return func(yield func(compat.CompleteLanguage) bool) {
+		for _, lang := range langs {
+			if len(c.Langs) == 0 || strings.HasPrefix(lang.Name(), "_") || slices.Contains(c.Langs, lang.Name()) {
+				if !yield(lang) {
+					return
+				}
+			}
 		}
 	}
-	return result
-}
-
-func containsLang(langNames []string, lang language.Language) bool {
-	for _, langName := range langNames {
-		if langName == lang.Name() {
-			return true
-		}
-	}
-	return false
 }

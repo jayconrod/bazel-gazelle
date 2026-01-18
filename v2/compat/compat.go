@@ -172,6 +172,30 @@ func (g generatorAdapter) Generate(ctx context.Context, args language.GenerateAr
 	}, nil
 }
 
+type ApparentLoader interface {
+	ApparentLoads(moduleToApparentName func(string) string) []rule.LoadInfo
+}
+
+type apparentLoaderAdapter struct {
+	v1 languagev1.Language
+}
+
+func (l apparentLoaderAdapter) ApparentLoads(moduleNameToApparentName func(string) string) []rule.LoadInfo {
+	if moduleAware, ok := l.v1.(languagev1.ModuleAwareLanguage); ok {
+		// Do not let the extension do its own module name mapping. We'll do this in
+		// a centralized place for all extensions.
+		return moduleAware.ApparentLoads(moduleNameToApparentName)
+	} else {
+		return l.v1.Loads()
+	}
+}
+
+type noopLoader struct{}
+
+func (l noopLoader) ApparentLoads(moduleToApparentName func(string) string) []rule.LoadInfo {
+	return nil
+}
+
 type fixerAdapter struct {
 	v1 languagev1.Language
 }
@@ -181,32 +205,41 @@ func (f fixerAdapter) Fix(ctx context.Context, args language.FixArgs) error {
 	return nil
 }
 
-type onStarterAdapter struct {
+type lifecycleAdapter struct {
 	v1 languagev1.LifecycleManager
 }
 
-func (s onStarterAdapter) OnStart(ctx context.Context) error {
-	s.v1.Before(ctx)
+func (a lifecycleAdapter) OnStart(ctx context.Context) error {
+	a.v1.Before(ctx)
 	return nil
 }
 
-type onFinisherAdapter struct {
+func (a lifecycleAdapter) OnResolve(ctx context.Context) error {
+	a.v1.DoneGeneratingRules()
+	return nil
+}
+
+func (a lifecycleAdapter) OnFinish(ctx context.Context) error {
+	a.v1.AfterResolvingDeps(ctx)
+	return nil
+}
+
+type finishableAdapter struct {
 	v1 languagev1.FinishableLanguage
 }
 
-func (f onFinisherAdapter) OnFinish(ctx context.Context) error {
-	f.v1.DoneGeneratingRules()
-	if lifecycle, ok := f.v1.(languagev1.LifecycleManager); ok {
-		lifecycle.AfterResolvingDeps(ctx)
-	}
+func (a finishableAdapter) OnResolve(ctx context.Context) error {
+	a.v1.DoneGeneratingRules()
 	return nil
 }
 
-type CompleteLanguage interface {
+type CompleteLanguage struct {
 	language.Language
 	language.Generator
+	ApparentLoader
 	language.Fixer
 	language.OnStarter
+	language.OnResolver
 	language.OnFinisher
 	config.Configurer
 	FlagConfigurer
@@ -215,30 +248,18 @@ type CompleteLanguage interface {
 	resolve.Finder
 }
 
-type completeLanguageAdapter struct {
-	language.Language
-	language.Generator
-	language.Fixer
-	language.OnStarter
-	language.OnFinisher
-	config.Configurer
-	FlagConfigurer
-	resolve.Indexer
-	resolve.Resolver
-	resolve.Finder
-}
-
-func (a completeLanguageAdapter) Name() string {
+func (a CompleteLanguage) Name() string {
 	return a.Language.Name()
 }
 
 func LanguageWithDefaults(v language.Language) CompleteLanguage {
-	adapter := completeLanguageAdapter{Language: v}
+	adapter := CompleteLanguage{Language: v}
 	if gen, ok := v.(language.Generator); ok {
 		adapter.Generator = gen
 	} else {
 		adapter.Generator = noopGenerator{}
 	}
+	adapter.ApparentLoader = noopLoader{}
 	if fix, ok := v.(language.Fixer); ok {
 		adapter.Fixer = fix
 	} else {
@@ -249,6 +270,11 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 	} else {
 		adapter.OnStarter = noopOnStarter{}
 	}
+	if resolve, ok := v.(language.OnResolver); ok {
+		adapter.OnResolver = resolve
+	} else {
+		adapter.OnResolver = noopOnResolver{}
+	}
 	if finish, ok := v.(language.OnFinisher); ok {
 		adapter.OnFinisher = finish
 	} else {
@@ -256,9 +282,13 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 	}
 	if cfg, ok := v.(config.Configurer); ok {
 		adapter.Configurer = cfg
+	} else if cfg, ok := v.(configv1.Configurer); ok {
+		// TODO(v2): migrate internal configurers and stop supporting this.
+		adapter.Configurer = configurerAdapter{v1: cfg}
 	} else {
 		adapter.Configurer = noopConfigurer{}
 	}
+	// TODO(v2): ignore a v2 implementation that sets this.
 	if flag, ok := v.(FlagConfigurer); ok {
 		adapter.FlagConfigurer = flag
 	} else {
@@ -283,23 +313,27 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 }
 
 func LanguageV2(v languagev1.Language) CompleteLanguage {
-	adapter := completeLanguageAdapter{
+	adapter := CompleteLanguage{
 		Language:       v,
 		Generator:      generatorAdapter{v1: v},
+		ApparentLoader: apparentLoaderAdapter{v1: v},
 		Fixer:          fixerAdapter{v1: v},
 		Configurer:     configurerAdapter{v1: v},
 		FlagConfigurer: configurerAdapter{v1: v},
 		Indexer:        indexerAdapter{v1: v},
 		Resolver:       resolverAdapter{v1: v},
 	}
-	if lifecycle, ok := v.(languagev1.LifecycleManager); ok {
-		adapter.OnStarter = onStarterAdapter{v1: lifecycle}
+	if lf, ok := v.(languagev1.LifecycleManager); ok {
+		adapter.OnStarter = lifecycleAdapter{v1: lf}
+		adapter.OnResolver = lifecycleAdapter{v1: lf}
+		adapter.OnFinisher = lifecycleAdapter{v1: lf}
+	} else if f, ok := v.(languagev1.FinishableLanguage); ok {
+		adapter.OnStarter = noopOnStarter{}
+		adapter.OnResolver = finishableAdapter{v1: f}
+		adapter.OnFinisher = noopOnFinisher{}
 	} else {
 		adapter.OnStarter = noopOnStarter{}
-	}
-	if f, ok := v.(languagev1.FinishableLanguage); ok {
-		adapter.OnFinisher = onFinisherAdapter{v1: f}
-	} else {
+		adapter.OnResolver = noopOnResolver{}
 		adapter.OnFinisher = noopOnFinisher{}
 	}
 	if cr, ok := v.(resolvev1.CrossResolver); ok {
@@ -329,6 +363,12 @@ func (noopFixer) Fix(_ context.Context, _ language.FixArgs) error {
 type noopOnStarter struct{}
 
 func (noopOnStarter) OnStart(_ context.Context) error {
+	return nil
+}
+
+type noopOnResolver struct{}
+
+func (noopOnResolver) OnResolve(_ context.Context) error {
 	return nil
 }
 

@@ -104,6 +104,10 @@ type Configurer struct {
 	readBuildFilesDir, writeBuildFilesDir string
 }
 
+func (cr *Configurer) Name() string {
+	return "_walk"
+}
+
 func (cr *Configurer) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
 	fs.Var(&gzflag.MultiFlag{Values: &cr.cliExcludes}, "exclude", "pattern that should be ignored (may be repeated)")
 	fs.StringVar(&cr.cliBuildFileNames, "build_file_name", strings.Join(config.DefaultValidBuildFileNames, ","), "comma-separated list of valid build file names.\nThe first element of the list is the name of output build files to generate.")

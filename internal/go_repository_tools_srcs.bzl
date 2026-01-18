@@ -150,6 +150,8 @@ GO_REPOSITORY_TOOLS_SRCS = [
     Label("//v2/flag:BUILD.bazel"),
     Label("//v2/flag:flag.go"),
     Label("//v2/internal:BUILD.bazel"),
+    Label("//v2/internal/gen_gazelle_binary_main:BUILD.bazel"),
+    Label("//v2/internal/gen_gazelle_binary_main:main.go"),
     Label("//v2/internal/module:BUILD.bazel"),
     Label("//v2/internal/module:module.go"),
     Label("//v2/internal/version:BUILD.bazel"),

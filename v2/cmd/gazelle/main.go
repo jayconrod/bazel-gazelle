@@ -25,6 +25,7 @@ import (
 	"os/signal"
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
 	"github.com/bazelbuild/bazel-gazelle/config"
@@ -59,12 +60,12 @@ func main() {
 }
 
 func run(ctx context.Context, wd string, args []string) error {
-	exts := make([]any, 0, len(languages)+4)
+	exts := make([]compat.CompleteLanguage, 0, len(languages)+4)
 	exts = append(exts,
-		&config.CommonConfigurer{},
-		&update.UpdateConfigurer{},
-		&walk.Configurer{},
-		&resolve.Configurer{})
+		compat.LanguageWithDefaults(&config.CommonConfigurer{}),
+		compat.LanguageWithDefaults(&update.UpdateConfigurer{}),
+		compat.LanguageWithDefaults(&walk.Configurer{}),
+		compat.LanguageWithDefaults(&resolve.Configurer{}))
 	for _, lang := range languages {
 		exts = append(exts, lang)
 	}

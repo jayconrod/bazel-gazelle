@@ -150,6 +150,12 @@ type OnStarter interface {
 	OnStart(context.Context) error
 }
 
+type OnResolver interface {
+	// Called after Gazelle generates rules in all directories it will visit
+	// but before Gazelle performs dependency resolution.
+	OnResolve(context.Context) error
+}
+
 type OnFinisher interface {
 	// Called after Gazelle has resolved dependencies on all rules and written
 	// updated build files.

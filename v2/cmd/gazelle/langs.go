@@ -16,14 +16,14 @@ limitations under the License.
 package main
 
 import (
-	"github.com/bazelbuild/bazel-gazelle/language"
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
 	golang "github.com/bazelbuild/bazel-gazelle/language/go"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
 )
 
-var languages = []language.Language{
-	visibility.NewLanguage(),
-	proto.NewLanguage(),
-	golang.NewLanguage(),
+var languages = []compat.CompleteLanguage{
+	compat.LanguageV2(visibility.NewLanguage()),
+	compat.LanguageV2(proto.NewLanguage()),
+	compat.LanguageV2(golang.NewLanguage()),
 }
