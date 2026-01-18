@@ -3,14 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "test_filegroup",
     srcs = ["lang.go"],
-    importpath = "github.com/bazelbuild/bazel-gazelle/internal/language/test_filegroup",
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/internal/language/test_filegroup",
     visibility = ["//visibility:public"],
     deps = [
-        "//config",
-        "//language",
-        "//repo",
-        "//resolve",
-        "//v2/label",
+        "//v2/language",
         "//v2/rule",
     ],
 )
@@ -23,10 +19,4 @@ filegroup(
         "lang.go",
     ],
     visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "go_default_library",
-    actual = ":test_filegroup",
-    visibility = ["//:__subpackages__"],
 )

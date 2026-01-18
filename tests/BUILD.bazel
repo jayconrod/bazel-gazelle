@@ -15,7 +15,7 @@ load("//tests:tools.bzl", "get_binary")
 _GAZELLE_BINARY_CONFIGS = [
     [
         "gazelle",
-        ["//internal/language/test_filegroup"],
+        ["//v2/internal/language/test_filegroup"],
     ],
     [
         "gazelle_with_language_loads_from_flag",

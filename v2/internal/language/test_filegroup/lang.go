@@ -27,28 +27,20 @@ import (
 	"context"
 	"path"
 
-	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/language"
-	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
 const testFilegroupName = "test_filegroup"
 
-type testFilegroupLang struct {
-	language.BaseLang
-
-	Initialized, RulesGenerated, DepsResolved bool
-}
+type testFilegroupLang struct{}
 
 var (
-	_ language.Language         = (*testFilegroupLang)(nil)
-	_ language.LifecycleManager = (*testFilegroupLang)(nil)
+	_ language.Language  = (*testFilegroupLang)(nil)
+	_ language.Generator = (*testFilegroupLang)(nil)
 )
 
-func NewLanguage() language.Language {
+func NewLanguageV2() language.Language {
 	return &testFilegroupLang{}
 }
 
@@ -65,18 +57,7 @@ var kinds = map[string]rule.KindInfo{
 	},
 }
 
-func (l *testFilegroupLang) Before(ctx context.Context) {
-	l.Initialized = true
-}
-
-func (l *testFilegroupLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
-	if !l.Initialized {
-		panic("GenerateRules must not be called before Before")
-	}
-	if l.RulesGenerated {
-		panic("GenerateRules must not be called after DoneGeneratingRules")
-	}
-
+func (l *testFilegroupLang) Generate(ctx context.Context, args language.GenerateArgs) (language.GenerateResult, error) {
 	r := rule.NewRule("filegroup", "all_files")
 	srcs := make([]string, 0, len(args.Subdirs)+len(args.RegularFiles))
 	srcs = append(srcs, args.RegularFiles...)
@@ -92,22 +73,5 @@ func (l *testFilegroupLang) GenerateRules(args language.GenerateArgs) language.G
 	return language.GenerateResult{
 		Gen:     []*rule.Rule{r},
 		Imports: []interface{}{nil},
-	}
-}
-
-func (l *testFilegroupLang) DoneGeneratingRules() {
-	l.RulesGenerated = true
-}
-
-func (l *testFilegroupLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports interface{}, from label.Label) {
-	if !l.RulesGenerated {
-		panic("Expected a call to DoneGeneratingRules before Resolve")
-	}
-	if l.DepsResolved {
-		panic("Resolve must be called before calling AfterResolvingDeps")
-	}
-}
-
-func (l *testFilegroupLang) AfterResolvingDeps(ctx context.Context) {
-	l.DepsResolved = true
+	}, nil
 }

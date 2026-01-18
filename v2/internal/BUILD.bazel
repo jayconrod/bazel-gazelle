@@ -4,6 +4,7 @@ filegroup(
     srcs = [
         "BUILD.bazel",
         "//v2/internal/gen_gazelle_binary_main:all_files",
+        "//v2/internal/language:all_files",
         "//v2/internal/module:all_files",
         "//v2/internal/version:all_files",
         "//v2/internal/wspace:all_files",
