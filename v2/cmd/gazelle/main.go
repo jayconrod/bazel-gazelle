@@ -28,6 +28,7 @@ import (
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
+
 	"github.com/bazelbuild/bazel-gazelle/config"
 )
 
@@ -41,7 +42,7 @@ func main() {
 	} else {
 		var err error
 		if wd, err = os.Getwd(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "gazelle: %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -51,7 +52,7 @@ func main() {
 
 	if err := run(ctx, wd, os.Args[1:]); err != nil {
 		if !errors.Is(err, update.ErrDiffExit) {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "gazelle: %v\n", err)
 		}
 		if !errors.Is(err, flag.ErrHelp) {
 			os.Exit(1)

@@ -50,9 +50,18 @@ def _non_module_deps_impl(module_ctx):
         name = "bazel_gazelle_go_repository_tools",
         go_cache = Label("@bazel_gazelle_go_repository_cache//:go.env"),
     )
+
+    # Find the gazelle module version
+    gazelle_version = None
+    for module in module_ctx.modules:
+        if module.name == "gazelle":
+            gazelle_version = module.version
+            break
+
     is_bazel_module(
         name = "bazel_gazelle_is_bazel_module",
         is_bazel_module = True,
+        module_version = gazelle_version,
     )
     return extension_metadata(module_ctx, reproducible = True)
 

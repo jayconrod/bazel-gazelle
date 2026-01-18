@@ -18,9 +18,18 @@ load(
     "go_context",
     "new_go_info",
 )
+load(
+    "@bazel_gazelle_is_bazel_module//:defs.bzl",
+    "GAZELLE_MODULE_VERSION",
+)
 
 def _gazelle_binary_impl(ctx):
     go = go_context(ctx)
+
+    version = ctx.attr.version
+    if version == 0:
+        version = _get_gazelle_major_version(GAZELLE_MODULE_VERSION)
+    srcs = ctx.attr._srcs_v2 if version == 2 else ctx.attr._srcs_v1
 
     # Generate a source file with a list of languages. This will get compiled
     # with the rest of the sources in the main package.
@@ -43,7 +52,7 @@ def _gazelle_binary_impl(ctx):
     attr = struct(
         srcs = [struct(files = [langs_file])],
         deps = ctx.attr.languages,
-        embed = [ctx.attr._srcs],
+        embed = [srcs],
     )
     go_info = new_go_info(go, attr, is_main = True)
 
@@ -91,6 +100,17 @@ proto extension stores metadata in hidden attributes of generated
             mandatory = True,
             allow_empty = False,
         ),
+        "version": attr.int(
+            default = 0,
+            values = [0, 1, 2],
+            doc = """The major version of Gazelle to build for
+
+            - 0 (default): the version is chosen automatically, based on the
+              module version.
+            - 1: legacy CLI behavior. Includes update-repos subcommand for Go.
+            - 2: new CLI behavior.
+            """,
+        ),
         "_gen_gazelle_binary_main": attr.label(
             default = "//v2/internal/gen_gazelle_binary_main",
             executable = True,
@@ -100,7 +120,10 @@ proto extension stores metadata in hidden attributes of generated
         # _stdlib is needed for rules_go versions before v0.23.0. After that,
         # _go_context_data includes a dependency on stdlib.
         "_stdlib": attr.label(default = "@io_bazel_rules_go//:stdlib"),
-        "_srcs": attr.label(
+        "_srcs_v1": attr.label(
+            default = "//cmd/gazelle:gazelle_lib",
+        ),
+        "_srcs_v2": attr.label(
             default = "//v2/cmd/gazelle:gazelle_lib",
         ),
     },
@@ -124,3 +147,17 @@ def format_import(importpath):
 
 def format_call(importpath):
     return _import_alias(importpath) + ".NewLanguage()"
+
+def _get_gazelle_major_version(version):
+    if not version:
+        return 2
+    parts = version.split(".", 1)
+    if not parts:
+        fail("Invalid version format: '{}'".format(version))
+    major = parts[0]
+    if major == "0" or major == "1":
+        return 1
+    elif major == "2":
+        return 2
+    else:
+        fail("Unsupported Gazelle major version: {}. Only versions 0, 1, and 2 are supported.".format(major))
