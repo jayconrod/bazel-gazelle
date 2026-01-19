@@ -3,7 +3,7 @@ filegroup(
     testonly = True,
     srcs = [
         "BUILD.bazel",
-        "//language/bazel/visibility:all_files",
+        "//v2/language/bazel/visibility:all_files",
     ],
     visibility = ["//visibility:public"],
 )

@@ -34,7 +34,7 @@ _GAZELLE_BINARY_CONFIGS = [
     ],
     [
         "gazelle_with_visibility",
-        ["//language/bazel/visibility:go_default_library"],
+        ["//v2/language/bazel/visibility"],
     ],
 ]
 

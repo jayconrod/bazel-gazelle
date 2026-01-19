@@ -28,7 +28,6 @@ filegroup(
         "lang.go",
         "lifecycle.go",
         "update.go",
-        "//language/bazel:all_files",
         "//language/go:all_files",
     ],
     visibility = ["//visibility:public"],

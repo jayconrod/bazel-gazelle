@@ -16,18 +16,24 @@ limitations under the License.
 package visibility
 
 import (
+	"context"
+
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/language"
 )
 
 // TODO: Rename this extension now that it handles multiple package() attributes.
 type visibilityExtension struct{}
 
-// NewLanguage constructs a new language.Language modifying visibility.
-func NewLanguage() language.Language {
+func NewLanguageV2() *visibilityExtension {
 	return &visibilityExtension{}
+}
+
+const _extName = "visibility_extension"
+
+func (*visibilityExtension) Name() string {
+	return _extName
 }
 
 // Kinds instructs gazelle to match any 'package' rule as BUILD files can only have one.
@@ -43,27 +49,18 @@ func (*visibilityExtension) Kinds() map[string]rule.KindInfo {
 	}
 }
 
-func (*visibilityExtension) Loads() []rule.LoadInfo {
-	panic("ApparentLoads should be called instead")
-}
-
-// ApparentLoads noops because there are no imports to add
-func (*visibilityExtension) ApparentLoads(func(string) string) []rule.LoadInfo {
-	return nil
-}
-
 // GenerateRules does the hard work of setting the default_visibility if a config exists.
-func (*visibilityExtension) GenerateRules(args language.GenerateArgs) language.GenerateResult {
+func (*visibilityExtension) Generate(ctx context.Context, args language.GenerateArgs) (language.GenerateResult, error) {
 	res := language.GenerateResult{}
 	cfg := getVisConfig(args.Config)
 
 	if len(cfg.visibilityTargets) == 0 && len(cfg.features) == 0 {
-		return res
+		return res, nil
 	}
 
 	if args.File == nil {
 		// No need to create a visibility if we're not in a visible directory.
-		return res
+		return res, nil
 	}
 
 	r := rule.NewRule("package", "")
@@ -99,8 +96,5 @@ func (*visibilityExtension) GenerateRules(args language.GenerateArgs) language.G
 	res.Gen = append(res.Gen, r)
 	// we have to add a nil to Imports because there is length-matching validation with Gen.
 	res.Imports = append(res.Imports, nil)
-	return res
+	return res, nil
 }
-
-// Fix noop because there is nothing out there to fix yet
-func (*visibilityExtension) Fix(c *config.Config, f *rule.File) {}

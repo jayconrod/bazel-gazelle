@@ -23,12 +23,12 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/cmd/gazelle/update"
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language/bazel/visibility"
 	"github.com/bazel-contrib/bazel-gazelle/v2/language/proto"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
 	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
 	golang "github.com/bazelbuild/bazel-gazelle/language/go"
 )
 
@@ -39,7 +39,7 @@ func runGazelleForTest(dir string, args []string) error {
 		compat.LanguageWithDefaults(&update.UpdateConfigurer{}),
 		compat.LanguageWithDefaults(&walk.Configurer{}),
 		compat.LanguageWithDefaults(&resolve.Configurer{}),
-		compat.LanguageV2(visibility.NewLanguage()),
+		compat.LanguageWithDefaults(visibility.NewLanguageV2()),
 		compat.LanguageWithDefaults(proto.NewLanguageV2()),
 		compat.LanguageV2(golang.NewLanguage()),
 	}

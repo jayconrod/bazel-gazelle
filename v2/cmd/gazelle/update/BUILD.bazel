@@ -45,9 +45,9 @@ go_test(
     deps = [
         ":update",
         "//config",
-        "//language/bazel/visibility",
         "//language/go",
         "//v2/compat",
+        "//v2/language/bazel/visibility",
         "//v2/language/proto",
         "//v2/resolve",
         "//v2/testtools",
