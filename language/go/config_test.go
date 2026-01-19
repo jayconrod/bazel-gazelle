@@ -47,15 +47,19 @@ func testConfig(t *testing.T, args ...string) (*config.Config, []language.Langua
 		args = append(args, "-repo_root=.")
 	}
 
-	cexts := []config.Configurer{
+	flagExts := []compat.FlagConfigurer{
 		&config.CommonConfigurer{},
 		&walk.Configurer{},
-		compat.MustConfigurerV2(&resolve.Configurer{}),
+		&resolve.Configurer{},
 	}
 	langs := []language.Language{proto.NewLanguage(), NewLanguage()}
-	c := testtools.NewTestConfig(t, cexts, langs, args)
 	for _, lang := range langs {
-		cexts = append(cexts, compat.MustConfigurerV2(lang))
+		flagExts = append(flagExts, lang.(compat.FlagConfigurer))
+	}
+	c := testtools.NewTestConfig(t, flagExts, args)
+	cexts := make([]config.Configurer, 0, len(flagExts))
+	for _, cext := range flagExts {
+		cexts = append(cexts, compat.MustConfigurerV2(cext))
 	}
 	return c, langs, cexts
 }

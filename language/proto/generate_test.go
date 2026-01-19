@@ -433,13 +433,18 @@ func TestRuleName(t *testing.T) {
 }
 
 func testConfig(t *testing.T, repoRoot string) (*config.Config, language.Language, []config.Configurer) {
+	lang := NewLanguage()
 	cexts := []config.Configurer{
 		&config.CommonConfigurer{},
 		compat.MustConfigurerV2(&walk.Configurer{}),
 		compat.MustConfigurerV2(&resolve.Configurer{}),
 	}
-	lang := NewLanguage()
-	c := testtools.NewTestConfig(t, cexts, []language.Language{lang}, []string{
+	flagExts := make([]compat.FlagConfigurer, 0, len(cexts)+1)
+	for _, cext := range cexts {
+		flagExts = append(flagExts, cext.(compat.FlagConfigurer))
+	}
+	flagExts = append(flagExts, lang)
+	c := testtools.NewTestConfig(t, flagExts, []string{
 		"-build_file_name=BUILD.old",
 		"-repo_root=" + repoRoot,
 	})

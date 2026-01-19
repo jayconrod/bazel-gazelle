@@ -894,8 +894,12 @@ func TestGetDirInfoErrorOnParent(t *testing.T) {
 
 func testConfig(t *testing.T, dir string) (*config.Config, []config.Configurer) {
 	args := []string{"-repo_root", dir}
-	cexts := []config.Configurer{&config.CommonConfigurer{}, compat.MustConfigurerV2(&Configurer{})}
-	c := testtools.NewTestConfig(t, cexts, nil, args)
+	flagExts := []compat.FlagConfigurer{&config.CommonConfigurer{}, &Configurer{}}
+	cexts := make([]config.Configurer, 0, len(flagExts))
+	for _, flagExt := range flagExts {
+		cexts = append(cexts, flagExt.(config.Configurer))
+	}
+	c := testtools.NewTestConfig(t, flagExts, args)
 	return c, cexts
 }
 

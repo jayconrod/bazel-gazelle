@@ -21,7 +21,6 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
-	"github.com/bazelbuild/bazel-gazelle/language"
 )
 
 // NewTestConfig returns a Config used for tests in any language extension.
@@ -30,27 +29,20 @@ import (
 // but it may be convenient to keep them separate). args is a list of
 // command line arguments to apply. NewTestConfig calls t.Fatal if any
 // error is encountered while processing flags.
-func NewTestConfig(t *testing.T, cexts []config.Configurer, langs []language.Language, args []string) *config.Config {
+func NewTestConfig(t *testing.T, cexts []compat.FlagConfigurer, args []string) *config.Config {
 	c := config.New()
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 
-	for _, lang := range langs {
-		cexts = append(cexts, compat.MustConfigurerV2(lang))
-	}
 	for _, cext := range cexts {
-		if flagExt, ok := cext.(compat.FlagConfigurer); ok {
-			flagExt.RegisterFlags(fs, "update", c)
-		}
+		cext.RegisterFlags(fs, "update", c)
 	}
 
 	if err := fs.Parse(args); err != nil {
 		t.Fatal(err)
 	}
 	for _, cext := range cexts {
-		if flagExt, ok := cext.(compat.FlagConfigurer); ok {
-			if err := flagExt.CheckFlags(fs, c); err != nil {
-				t.Fatal(err)
-			}
+		if err := cext.CheckFlags(fs, c); err != nil {
+			t.Fatal(err)
 		}
 	}
 
