@@ -23,10 +23,11 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
 	bzl "github.com/bazelbuild/buildtools/build"
 	"golang.org/x/tools/go/vcs"
 )
@@ -931,20 +932,19 @@ go_proto_library(
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			c, langs, cexts := testConfig(
+			c, exts := testConfig(
 				t,
 				"-go_prefix=example.com/repo/resolve",
 				fmt.Sprintf("-go_naming_convention=%s", tc.namingConvention),
 				"-external=vendored", fmt.Sprintf("-index=%v", !tc.skipIndex))
-			mrslv := make(mapResolver)
-			exts := make([]interface{}, 0, len(langs))
-			for _, lang := range langs {
-				for kind := range lang.Kinds() {
-					mrslv[kind] = lang
+			finders := make([]resolve.Finder, 0, len(exts))
+			for _, ext := range exts {
+				if finder, ok := ext.(resolve.Finder); ok {
+					finders = append(finders, finder)
 				}
-				exts = append(exts, lang)
 			}
-			ix := resolve.NewRuleIndex(mrslv.Resolver, exts...)
+			extMap := newKindToExtMap(exts)
+			ix := resolve.NewRuleIndex(extMap.indexer, finders)
 			rc := testRemoteCache(nil)
 
 			for _, bf := range tc.index {
@@ -954,14 +954,16 @@ go_proto_library(
 					t.Fatal(err)
 				}
 				if bf.rel == "" {
-					for _, cext := range cexts {
-						err := cext.Configure(t.Context(), config.ConfigureArgs{
-							Config: c,
-							Rel:    "",
-							File:   f,
-						})
-						if err != nil {
-							t.Fatal(err)
+					for _, ext := range exts {
+						if cext, ok := ext.(config.Configurer); ok {
+							err := cext.Configure(t.Context(), config.ConfigureArgs{
+								Config: c,
+								Rel:    "",
+								File:   f,
+							})
+							if err != nil {
+								t.Fatal(err)
+							}
 						}
 					}
 				}
@@ -981,7 +983,17 @@ go_proto_library(
 			}
 			ix.Finish()
 			for i, r := range f.Rules {
-				mrslv.Resolver(r, "").Resolve(c, ix, rc, r, imports[i], label.New("", tc.old.rel, r.Name()))
+				err := extMap.resolver(r).Resolve(t.Context(), resolve.ResolveArgs{
+					Config:      c,
+					Index:       ix,
+					Rule:        r,
+					From:        label.New("", tc.old.rel, r.Name()),
+					RemoteCache: rc,
+					Imports:     imports[i],
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			f.Sync()
 			got := strings.TrimSpace(string(bzl.Format(f.File)))
@@ -994,15 +1006,17 @@ go_proto_library(
 }
 
 func TestResolveDisableGlobal(t *testing.T) {
-	c, langs, _ := testConfig(
+	c, exts := testConfig(
 		t,
 		"-go_prefix=example.com/repo",
 		"-proto=disable_global")
-	exts := make([]interface{}, 0, len(langs))
-	for _, lang := range langs {
-		exts = append(exts, lang)
+	finders := make([]resolve.Finder, 0, len(exts))
+	for _, ext := range exts {
+		if finder, ok := ext.(resolve.Finder); ok {
+			finders = append(finders, finder)
+		}
 	}
-	ix := resolve.NewRuleIndex(nil, exts...)
+	ix := resolve.NewRuleIndex(nil, finders)
 	ix.Finish()
 	rc := testRemoteCache([]repo.Repo{
 		{
@@ -1013,7 +1027,7 @@ func TestResolveDisableGlobal(t *testing.T) {
 			GoPrefix: "golang.org/google/genproto",
 		},
 	})
-	gl := langs[1].(*goLang)
+	gl := getGoExt(exts)
 	oldContent := []byte(`
 go_library(
     name = "go_default_library",
@@ -1046,7 +1060,17 @@ go_library(
 	}
 	for _, r := range f.Rules {
 		imports := convertImportsAttr(r)
-		gl.Resolve(c, ix, rc, r, imports, label.New("", "", r.Name()))
+		err := gl.Resolve(t.Context(), resolve.ResolveArgs{
+			Config:      c,
+			Index:       ix,
+			Rule:        r,
+			From:        label.New("", "", r.Name()),
+			RemoteCache: rc,
+			Imports:     imports,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.Sync()
 	got := strings.TrimSpace(string(bzl.Format(f.File)))
@@ -1082,13 +1106,13 @@ go_library(
 }
 
 func TestResolveExternal(t *testing.T) {
-	c, langs, _ := testConfig(
+	c, exts := testConfig(
 		t,
 		"-go_prefix=example.com/local")
 	gc := getGoConfig(c)
-	ix := resolve.NewRuleIndex(nil)
+	ix := resolve.NewRuleIndex(nil, nil)
 	ix.Finish()
-	gl := langs[1].(*goLang)
+	gl := getGoExt(exts)
 	for _, tc := range []struct {
 		desc, importpath         string
 		repos                    []repo.Repo
@@ -1246,7 +1270,17 @@ func TestResolveExternal(t *testing.T) {
 			rc := testRemoteCache(tc.repos)
 			r := rule.NewRule("go_library", "x")
 			imports := rule.PlatformStrings{Generic: []string{tc.importpath}}
-			gl.Resolve(c, ix, rc, r, imports, label.New("", "", "x"))
+			err := gl.Resolve(t.Context(), resolve.ResolveArgs{
+				Config:      c,
+				Index:       ix,
+				Rule:        r,
+				From:        label.New("", "", "x"),
+				RemoteCache: rc,
+				Imports:     imports,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			deps := r.AttrStrings("deps")
 			if tc.want == "" {
 				if len(deps) != 0 {
@@ -1325,8 +1359,30 @@ func convertImportsAttr(r *rule.Rule) interface{} {
 	}
 }
 
-type mapResolver map[string]resolve.Resolver
+type kindToExtMap map[string]language.Generator
 
-func (mr mapResolver) Resolver(r *rule.Rule, f string) resolve.Resolver {
-	return mr[r.Kind()]
+func newKindToExtMap(exts []any) kindToExtMap {
+	m := kindToExtMap{}
+	for _, ext := range exts {
+		if gen, ok := ext.(language.Generator); ok {
+			for kind := range gen.Kinds() {
+				m[kind] = gen
+			}
+		}
+	}
+	return m
+}
+
+func (m kindToExtMap) indexer(r *rule.Rule, f string) resolve.Indexer {
+	if indexer, ok := m[r.Kind()].(resolve.Indexer); ok {
+		return indexer
+	}
+	return nil
+}
+
+func (m kindToExtMap) resolver(r *rule.Rule) resolve.Resolver {
+	if resolver, ok := m[r.Kind()].(resolve.Resolver); ok {
+		return resolver
+	}
+	return nil
 }

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 )
@@ -875,13 +876,22 @@ go_proto_library(name = "foo_proto")
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			testFix(t, tc, func(f *rule.File) {
-				c, langs, _ := testConfig(t,
+				c, exts := testConfig(t,
 					"-go_naming_convention="+tc.namingConvention.String(),
 					"-go_prefix=example.com/foo",
 				)
 				c.ShouldFix = true
-				for _, lang := range langs {
-					lang.Fix(c, f)
+				for _, ext := range exts {
+					if fixer, ok := ext.(language.Fixer); ok {
+						err := fixer.Fix(t.Context(), language.FixArgs{
+							Config: c,
+							Rel:    f.Pkg,
+							File:   f,
+						})
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
 				}
 			})
 		})

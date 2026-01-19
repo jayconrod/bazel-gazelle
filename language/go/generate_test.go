@@ -23,11 +23,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/language"
+	languagev1 "github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
 	bzl "github.com/bazelbuild/buildtools/build"
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -63,7 +65,7 @@ func TestGenerateRules(t *testing.T) {
 		}
 	}
 
-	c, langs, cexts := testConfig(
+	c, exts := testConfig(
 		t,
 		"-build_file_name=BUILD.old",
 		"-go_prefix=example.com/repo",
@@ -77,39 +79,54 @@ func TestGenerateRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, cext := range cexts {
-		err := cext.Configure(t.Context(), config.ConfigureArgs{
-			Config: c,
-			Rel:    "",
-			File:   f,
-		})
-		if err != nil {
-			t.Fatal(err)
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			err := cext.Configure(t.Context(), config.ConfigureArgs{
+				Config: c,
+				Rel:    "",
+				File:   f,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 
 	var loads []rule.LoadInfo
-	for _, lang := range langs {
-		loads = append(loads, lang.(language.ModuleAwareLanguage).ApparentLoads(func(string) string { return "" })...)
+	for _, ext := range exts {
+		if loader, ok := ext.(compat.ApparentLoader); ok {
+			loads = append(loads, loader.ApparentLoads(func(string) string { return "" })...)
+		}
+	}
+	cexts := make([]config.Configurer, 0, len(exts))
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			cexts = append(cexts, cext)
+		}
 	}
 	var testsFound int
 	walk.Walk(c, cexts, []string{testdataDir}, walk.VisitAllUpdateSubdirsMode, func(dir, rel string, c *config.Config, update bool, oldFile *rule.File, subdirs, regularFiles, genFiles []string) {
 		t.Run(rel, func(t *testing.T) {
 			var empty, gen []*rule.Rule
-			for _, lang := range langs {
-				res := lang.GenerateRules(language.GenerateArgs{
-					Config:       c,
-					Dir:          dir,
-					Rel:          rel,
-					File:         oldFile,
-					Subdirs:      subdirs,
-					RegularFiles: regularFiles,
-					GenFiles:     genFiles,
-					OtherEmpty:   empty,
-					OtherGen:     gen,
-				})
-				empty = append(empty, res.Empty...)
-				gen = append(gen, res.Gen...)
+			for _, ext := range exts {
+				if lang, ok := ext.(language.Generator); ok {
+					res, err := lang.Generate(t.Context(), language.GenerateArgs{
+						Config:       c,
+						Dir:          dir,
+						Rel:          rel,
+						File:         oldFile,
+						Subdirs:      subdirs,
+						RegularFiles: regularFiles,
+						GenFiles:     genFiles,
+						OtherEmpty:   empty,
+						OtherGen:     gen,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					empty = append(empty, res.Empty...)
+					gen = append(gen, res.Gen...)
+				}
 			}
 			isTest := false
 			for _, name := range regularFiles {
@@ -151,13 +168,16 @@ func TestGenerateRules(t *testing.T) {
 }
 
 func TestGenerateRulesEmpty(t *testing.T) {
-	c, langs, _ := testConfig(t, "-go_prefix=example.com/repo")
-	goLang := langs[1].(*goLang)
-	res := goLang.GenerateRules(language.GenerateArgs{
+	c, exts := testConfig(t, "-go_prefix=example.com/repo")
+	goLang := getGoExt(exts)
+	res, err := goLang.Generate(t.Context(), language.GenerateArgs{
 		Config: c,
 		Dir:    "./foo",
 		Rel:    "foo",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(res.Gen) > 0 {
 		t.Errorf("got %d generated rules; want 0", len(res.Gen))
 	}
@@ -184,13 +204,16 @@ go_test(name = "foo_test")
 }
 
 func TestGenerateRulesEmptyLegacyProto(t *testing.T) {
-	c, langs, _ := testConfig(t, "-proto=legacy")
-	goLang := langs[len(langs)-1].(*goLang)
-	res := goLang.GenerateRules(language.GenerateArgs{
+	c, exts := testConfig(t, "-proto=legacy")
+	goLang := getGoExt(exts)
+	res, err := goLang.Generate(t.Context(), language.GenerateArgs{
 		Config: c,
 		Dir:    "./foo",
 		Rel:    "foo",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range res.Empty {
 		if kind := e.Kind(); kind == "proto_library" || kind == "go_proto_library" || kind == "go_grpc_library" {
 			t.Errorf("deleted rule %s ; should not delete in legacy proto mode", kind)
@@ -199,7 +222,7 @@ func TestGenerateRulesEmptyLegacyProto(t *testing.T) {
 }
 
 func TestGenerateRulesEmptyPackageProto(t *testing.T) {
-	c, langs, _ := testConfig(t, "-proto=package", "-go_prefix=example.com/repo")
+	c, exts := testConfig(t, "-proto=package", "-go_prefix=example.com/repo")
 	oldContent := []byte(`
 proto_library(
     name = "dead_proto",
@@ -211,15 +234,20 @@ proto_library(
 		t.Fatal(err)
 	}
 	var empty []*rule.Rule
-	for _, lang := range langs {
-		res := lang.GenerateRules(language.GenerateArgs{
-			Config:     c,
-			Dir:        "./foo",
-			Rel:        "foo",
-			File:       old,
-			OtherEmpty: empty,
-		})
-		empty = append(empty, res.Empty...)
+	for _, ext := range exts {
+		if gen, ok := ext.(language.Generator); ok {
+			res, err := gen.Generate(t.Context(), language.GenerateArgs{
+				Config:     c,
+				Dir:        "./foo",
+				Rel:        "foo",
+				File:       old,
+				OtherEmpty: empty,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			empty = append(empty, res.Empty...)
+		}
 	}
 	f := rule.EmptyFile("test", "")
 	for _, r := range empty {
@@ -253,15 +281,18 @@ func TestGenerateRulesPrebuiltGoProtoRules(t *testing.T) {
 		"-proto=package",
 	} {
 		t.Run("with flag: "+protoFlag, func(t *testing.T) {
-			c, langs, _ := testConfig(t, protoFlag)
-			goLang := langs[len(langs)-1].(*goLang)
+			c, exts := testConfig(t, protoFlag)
+			goLang := getGoExt(exts)
 
-			res := goLang.GenerateRules(language.GenerateArgs{
+			res, err := goLang.Generate(t.Context(), language.GenerateArgs{
 				Config:   c,
 				Dir:      "./foo",
 				Rel:      "foo",
 				OtherGen: prebuiltProtoRules(),
 			})
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			if len(res.Gen) != 0 {
 				t.Errorf("got %d generated rules; want 0", len(res.Gen))
@@ -295,11 +326,16 @@ func TestConsumedGenFiles(t *testing.T) {
 	otherRule.SetAttr("srcs", []string{"mocks.go"})
 	args.OtherGen = append(args.OtherGen, otherRule)
 
-	gl := goLang{
+	gl := compat.LanguageV2(&goLang{
 		goPkgRels: make(map[string]bool),
+	})
+	if err := gl.Configure(t.Context(), config.ConfigureArgs{Config: args.Config}); err != nil {
+		t.Fatal(err)
 	}
-	gl.Configure(args.Config, "", nil)
-	res := gl.GenerateRules(args)
+	res, err := gl.Generate(t.Context(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
 	got := res.Gen[0].AttrStrings("srcs")
 	want := []string{"regular.go"}
 	if len(got) != len(want) || got[0] != want[0] {
@@ -310,18 +346,18 @@ func TestConsumedGenFiles(t *testing.T) {
 // Test visibility attribute is only set if no default visibility is provided
 // by the file or other rules.
 func TestShouldSetVisibility(t *testing.T) {
-	if !shouldSetVisibility(language.GenerateArgs{}) {
+	if !shouldSetVisibility(languagev1.GenerateArgs{}) {
 		t.Error("got 'False' for shouldSetVisibility with default args; expected 'True'")
 	}
 
-	if !shouldSetVisibility(language.GenerateArgs{
+	if !shouldSetVisibility(languagev1.GenerateArgs{
 		File: rule.EmptyFile("path", "pkg"),
 	}) {
 		t.Error("got 'False' for shouldSetVisibility with empty file; expected 'True'")
 	}
 
 	fileWithDefaultVisibile, _ := rule.LoadData("path", "pkg", []byte(`package(default_visibility = "//src:__subpackages__")`))
-	if shouldSetVisibility(language.GenerateArgs{
+	if shouldSetVisibility(languagev1.GenerateArgs{
 		File: fileWithDefaultVisibile,
 	}) {
 		t.Error("got 'True' for shouldSetVisibility with file with default visibility; expected 'False'")
@@ -329,11 +365,20 @@ func TestShouldSetVisibility(t *testing.T) {
 
 	defaultVisibilityRule := rule.NewRule("package", "")
 	defaultVisibilityRule.SetAttr("default_visibility", []string{"//src:__subpackages__"})
-	if shouldSetVisibility(language.GenerateArgs{
+	if shouldSetVisibility(languagev1.GenerateArgs{
 		OtherGen: []*rule.Rule{defaultVisibilityRule},
 	}) {
 		t.Error("got 'True' for shouldSetVisibility with rule defining a default visibility; expected 'False'")
 	}
+}
+
+func getGoExt(exts []any) compat.CompleteLanguage {
+	for _, ext := range exts {
+		if lang, ok := ext.(compat.CompleteLanguage); ok && lang.Name() == "go" {
+			return lang
+		}
+	}
+	panic("Go extension not found")
 }
 
 func prebuiltProtoRules() []*rule.Rule {

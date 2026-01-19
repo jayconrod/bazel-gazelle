@@ -445,7 +445,7 @@ import "C"
 	if err := os.WriteFile(goFile, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, _, _ := testConfig(
+	c, _ := testConfig(
 		t,
 		"-repo_root="+repo,
 		"-go_prefix=example.com/repo")
@@ -520,7 +520,7 @@ func TestGoExperimentsTagsIgnored(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			c, _, _ := testConfig(t)
+			c, _ := testConfig(t)
 			fi := goFileInfo(path, "")
 			if !checkConstraints(c, "", "", fi.goos, fi.goarch, fi.tags, nil) {
 				t.Fatalf("constraints should be satisfied for %s", tc.desc)

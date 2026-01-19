@@ -23,16 +23,15 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/language/proto"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
 	"github.com/google/go-cmp/cmp"
 )
 
-func testConfig(t *testing.T, args ...string) (*config.Config, []language.Language, []config.Configurer) {
+func testConfig(t *testing.T, args ...string) (*config.Config, []any) {
 	// Add a -repo_root argument if none is present. Without this,
 	// config.CommonConfigurer will try to auto-detect a WORKSPACE file,
 	// which will fail.
@@ -47,25 +46,23 @@ func testConfig(t *testing.T, args ...string) (*config.Config, []language.Langua
 		args = append(args, "-repo_root=.")
 	}
 
-	flagExts := []compat.FlagConfigurer{
+	exts := []any{
 		&config.CommonConfigurer{},
 		&walk.Configurer{},
-		&resolve.Configurer{},
+		compat.MustConfigurerV2(&resolve.Configurer{}),
+		compat.LanguageV2(proto.NewLanguage()),
+		compat.LanguageV2(NewLanguage()),
 	}
-	langs := []language.Language{proto.NewLanguage(), NewLanguage()}
-	for _, lang := range langs {
-		flagExts = append(flagExts, lang.(compat.FlagConfigurer))
+	flagExts := make([]compat.FlagConfigurer, len(exts))
+	for i := range exts {
+		flagExts[i] = exts[i].(compat.FlagConfigurer)
 	}
 	c := testtools.NewTestConfig(t, flagExts, args)
-	cexts := make([]config.Configurer, 0, len(flagExts))
-	for _, cext := range flagExts {
-		cexts = append(cexts, compat.MustConfigurerV2(cext))
-	}
-	return c, langs, cexts
+	return c, exts
 }
 
 func TestCommandLine(t *testing.T) {
-	c, _, _ := testConfig(
+	c, _ := testConfig(
 		t,
 		"-build_tags=foo,bar",
 		"-go_prefix=example.com/repo",
@@ -90,7 +87,7 @@ func TestCommandLine(t *testing.T) {
 }
 
 func TestDirectives(t *testing.T) {
-	c, _, cexts := testConfig(t)
+	c, exts := testConfig(t)
 	content := []byte(`
 # gazelle:build_tags foo,bar
 # gazelle:importmap_prefix x
@@ -102,14 +99,16 @@ func TestDirectives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, cext := range cexts {
-		err := cext.Configure(t.Context(), config.ConfigureArgs{
-			Config: c,
-			Rel:    "test",
-			File:   f,
-		})
-		if err != nil {
-			t.Fatal(err)
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			err := cext.Configure(t.Context(), config.ConfigureArgs{
+				Config: c,
+				Rel:    "test",
+				File:   f,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	gc := getGoConfig(c)
@@ -152,14 +151,16 @@ func TestDirectives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, cext := range cexts {
-		err := cext.Configure(t.Context(), config.ConfigureArgs{
-			Config: c,
-			Rel:    "test/sub",
-			File:   f,
-		})
-		if err != nil {
-			t.Fatal(err)
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			err := cext.Configure(t.Context(), config.ConfigureArgs{
+				Config: c,
+				Rel:    "test/sub",
+				File:   f,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	gc = getGoConfig(c)
@@ -180,20 +181,22 @@ func TestDirectives(t *testing.T) {
 }
 
 func TestVendorConfig(t *testing.T) {
-	c, _, cexts := testConfig(t)
+	c, exts := testConfig(t)
 	gc := getGoConfig(c)
 	gc.prefix = "example.com/repo"
 	gc.prefixRel = ""
 	gc.importMapPrefix = "bad-importmap-prefix"
 	gc.importMapPrefixRel = ""
-	for _, cext := range cexts {
-		err := cext.Configure(t.Context(), config.ConfigureArgs{
-			Config: c,
-			Rel:    "x/vendor",
-			File:   nil,
-		})
-		if err != nil {
-			t.Fatal(err)
+	for _, ext := range exts {
+		if cext, ok := ext.(config.Configurer); ok {
+			err := cext.Configure(t.Context(), config.ConfigureArgs{
+				Config: c,
+				Rel:    "x/vendor",
+				File:   nil,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	gc = getGoConfig(c)
@@ -212,7 +215,7 @@ func TestVendorConfig(t *testing.T) {
 }
 
 func TestInferProtoMode(t *testing.T) {
-	c, _, cexts := testConfig(t)
+	c, exts := testConfig(t)
 	for _, tc := range []struct {
 		desc, rel, content string
 		old                proto.Mode
@@ -283,14 +286,16 @@ load("@io_bazel_rules_go//proto:go_proto_library.bzl", "go_proto_library")
 					t.Fatal(err)
 				}
 			}
-			for _, cext := range cexts {
-				err := cext.Configure(t.Context(), config.ConfigureArgs{
-					Config: c,
-					Rel:    tc.rel,
-					File:   f,
-				})
-				if err != nil {
-					t.Fatal(err)
+			for _, ext := range exts {
+				if cext, ok := ext.(config.Configurer); ok {
+					err := cext.Configure(t.Context(), config.ConfigureArgs{
+						Config: c,
+						Rel:    tc.rel,
+						File:   f,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			pc = proto.GetProtoConfig(c)
@@ -302,7 +307,7 @@ load("@io_bazel_rules_go//proto:go_proto_library.bzl", "go_proto_library")
 }
 
 func TestPrefixFallback(t *testing.T) {
-	c, _, cexts := testConfig(t)
+	c, exts := testConfig(t)
 	for _, tc := range []struct {
 		desc, content, want string
 	}{
@@ -328,14 +333,16 @@ gazelle(
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, cext := range cexts {
-				err := cext.Configure(t.Context(), config.ConfigureArgs{
-					Config: c,
-					Rel:    "x",
-					File:   f,
-				})
-				if err != nil {
-					t.Fatal(err)
+			for _, ext := range exts {
+				if cext, ok := ext.(config.Configurer); ok {
+					err := cext.Configure(t.Context(), config.ConfigureArgs{
+						Config: c,
+						Rel:    "x",
+						File:   f,
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
 				}
 			}
 			gc := getGoConfig(c)

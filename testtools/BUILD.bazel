@@ -13,7 +13,6 @@ go_library(
         "//config",
         "//language",
         "//v2/compat",
-        "//v2/config",
         "//v2/testtools",
     ],
 )
