@@ -35,7 +35,7 @@ gazelle(
 gazelle_binary(
     name = "gazelle_local",
     languages = [
-        "//language/proto",
+        "//v2/language/proto",
         "//language/go",
         "//v2/internal/language/test_filegroup",
         "@bazel_skylib_gazelle_plugin//bzl",

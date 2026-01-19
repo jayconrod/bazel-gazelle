@@ -18,13 +18,13 @@ The first argument to Gazelle may be one of the commands below. If no command is
 
 The `update` command is the most common way of running Gazelle. Gazelle scans sources in directories throughout the repository, then creates and updates build files.
 
-The `fix` command does everything `update` does, but it also fixes deprecated usage of rules, analogous to `go fix`. For example, `cgo_library` will be consolidated with `go_library`. This command may delete or rename rules, so it's not used by default. The transformations are documented with each language extension: see [Go](language/go/reference.md#fix-command-transformations) and [proto](language/proto/reference.md#fix-command-transformations) for details.
+The `fix` command does everything `update` does, but it also fixes deprecated usage of rules, analogous to `go fix`. For example, `cgo_library` will be consolidated with `go_library`. This command may delete or rename rules, so it's not used by default. The transformations are documented with each language extension: see [Go](language/go/reference.md#fix-command-transformations) and [proto](v2/language/proto/reference.md#fix-command-transformations) for details.
 
 Both commands accept a list of directories to process as positional arguments. If no directories are specified, Gazelle will process the current directory. Subdirectories will be processed recursively by default (unless `-r=false`).
 
 ### Flags
 
-The following general purpose flags are accepted. See [Go: Flags](language/go/reference.md#flags) and [Proto: Flags](language/proto/reference.md#flags) for flags defined by language extensions in this repo.
+The following general purpose flags are accepted. See [Go: Flags](language/go/reference.md#flags) and [Proto: Flags](v2/language/proto/reference.md#flags) for flags defined by language extensions in this repo.
 
 Many flags have equivalent [directives](#directives) that may be written in `BUIlD` files rather than passed on the command line. When possible, use directives instead of flags. Directives are more consistent and readable for developers working on a project, and they are more precise, since they can be set in specific subdirectories.
 
@@ -110,7 +110,7 @@ go_library(
 
 Directives apply in the directory where they are set *and* in subdirectories. This means, for example, if you set `# gazelle:prefix` in the build file in your project's root directory, it affects your whole project. If you set it in a subdirectory, it only affects rules in that subtree.
 
-The following general-purpose directives are recognized. See [Go: Directives](language/go/reference.md#directives) and [Proto: Directives](language/proto/reference.md#directives) for directives defined by language extensions in this repo.
+The following general-purpose directives are recognized. See [Go: Directives](language/go/reference.md#directives) and [Proto: Directives](v2/language/proto/reference.md#directives) for directives defined by language extensions in this repo.
 
 **Directive:** `# gazelle:alias_kind macro_name wrapped_kind`<br>
 **Default:** n/a<br>

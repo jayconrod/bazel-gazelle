@@ -58,7 +58,7 @@ gazelle_generation_test = _gazelle_generation_test
 
 DEFAULT_LANGUAGES = [
     Label("//language/bazel/visibility"),
-    Label("//language/proto"),
+    Label("//v2/language/proto"),
     Label("//language/go"),
 ]
 

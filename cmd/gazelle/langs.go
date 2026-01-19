@@ -17,13 +17,13 @@ package main
 
 import (
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language/proto"
 	"github.com/bazelbuild/bazel-gazelle/language/bazel/visibility"
 	golang "github.com/bazelbuild/bazel-gazelle/language/go"
-	"github.com/bazelbuild/bazel-gazelle/language/proto"
 )
 
 var languages = []compat.CompleteLanguage{
 	compat.LanguageWithDefaults(visibility.NewLanguage()),
-	compat.LanguageV2(proto.NewLanguage()),
+	compat.LanguageWithDefaults(proto.NewLanguageV2()),
 	compat.LanguageV2(golang.NewLanguage()),
 }

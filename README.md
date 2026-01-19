@@ -209,7 +209,7 @@ For a full reference on Gazelle's configuration directives, flags, and rules, se
 
 - [Configuration and command line reference](gazelle-reference.md)
 - [Go reference](language/go/reference.md)
-- [Proto reference](language/proto/reference.md)
+- [Proto reference](v2/language/proto/reference.md)
 - [Rule reference](reference.md) (for `gazelle` and `gazelle_binary` rules)
 
 Extensions defined outside this repo provide their own references.

@@ -23,11 +23,11 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language/proto"
 	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/language/proto"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -50,7 +50,7 @@ func testConfig(t *testing.T, args ...string) (*config.Config, []any) {
 		&config.CommonConfigurer{},
 		&walk.Configurer{},
 		compat.MustConfigurerV2(&resolve.Configurer{}),
-		compat.LanguageV2(proto.NewLanguage()),
+		compat.LanguageWithDefaults(proto.NewLanguageV2()),
 		compat.LanguageV2(NewLanguage()),
 	}
 	flagExts := make([]compat.FlagConfigurer, len(exts))

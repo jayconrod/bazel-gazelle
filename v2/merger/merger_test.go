@@ -19,11 +19,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language/proto"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/language"
 	golang "github.com/bazelbuild/bazel-gazelle/language/go"
-	"github.com/bazelbuild/bazel-gazelle/language/proto"
 )
 
 // should fix
@@ -1044,12 +1044,15 @@ var (
 
 func init() {
 	testKinds = make(map[string]rule.KindInfo)
-	langs := []language.Language{proto.NewLanguage(), golang.NewLanguage()}
+	langs := []compat.CompleteLanguage{
+		compat.LanguageWithDefaults(proto.NewLanguageV2()),
+		compat.LanguageV2(golang.NewLanguage()),
+	}
 	for _, lang := range langs {
 		for kind, info := range lang.Kinds() {
 			testKinds[kind] = info
 		}
-		loads := lang.(language.ModuleAwareLanguage).ApparentLoads(func(s string) string {
+		loads := lang.ApparentLoads(func(s string) string {
 			return ""
 		})
 		testLoads = append(testLoads, loads...)

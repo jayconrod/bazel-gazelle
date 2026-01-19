@@ -42,7 +42,7 @@ known_imports = rule(
         "key": attr.int(mandatory = True),
         "value": attr.int(mandatory = True),
         "_bin": attr.label(
-            default = Label("//language/proto/gen:gen_known_imports"),
+            default = Label("//v2/language/proto/gen:gen_known_imports"),
             executable = True,
             cfg = "exec",
         ),

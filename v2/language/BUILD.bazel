@@ -17,6 +17,7 @@ filegroup(
     srcs = [
         "BUILD.bazel",
         "lang.go",
+        "//v2/language/proto:all_files",
     ],
     visibility = ["//visibility:public"],
 )

@@ -19,8 +19,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
 )
 
 func TestCheckStripImportPrefix(t *testing.T) {
@@ -154,10 +154,10 @@ func TestInferProtoMode(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Set up the minimal config for the test, we populate only with the data required for the protoConfig mode inferring logic.
-		config := config.New()
-		config.Exts[protoName] = &ProtoConfig{GoPrefix: tc.build.goPrefix}
-		config.ModuleToApparentName = func(module string) string {
+		// Set up the minimal c for the test, we populate only with the data required for the protoConfig mode inferring logic.
+		c := config.New()
+		c.Exts[protoName] = &ProtoConfig{GoPrefix: tc.build.goPrefix}
+		c.ModuleToApparentName = func(module string) string {
 			if tc.build.usingWorkspace {
 				return ""
 			}
@@ -171,8 +171,16 @@ func TestInferProtoMode(t *testing.T) {
 				return ""
 			}
 		}
-		NewLanguage().Configure(config, tc.build.rel, file)
-		pc := GetProtoConfig(config)
+		cext := NewLanguageV2().(config.Configurer)
+		err = cext.Configure(t.Context(), config.ConfigureArgs{
+			Config: c,
+			Rel:    tc.build.rel,
+			File:   file,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pc := GetProtoConfig(c)
 		if pc.Mode != tc.expected {
 			t.Errorf("for %q, got mode %v, want %v", tc.desc, pc.Mode, tc.expected)
 		}

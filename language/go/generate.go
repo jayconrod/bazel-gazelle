@@ -25,11 +25,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/language/proto"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
-	"github.com/bazelbuild/bazel-gazelle/language/proto"
 )
 
 func (gl *goLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {

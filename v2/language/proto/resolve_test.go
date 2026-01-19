@@ -23,9 +23,8 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
 	bzl "github.com/bazelbuild/buildtools/build"
 )
 
@@ -388,10 +387,14 @@ proto_library(
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			c, lang, cexts := testConfig(t, ".")
-			mrslv := make(mapResolver)
-			mrslv["proto_library"] = lang
-			ix := resolve.NewRuleIndex(mrslv.Resolver, []resolve.CrossResolver{lang.(resolve.CrossResolver)})
-			rc := (*repo.RemoteCache)(nil)
+			mrslv := func(r *rule.Rule, pkgRel string) resolve.Indexer {
+				if r.Kind() == "proto_library" {
+					return lang
+				}
+				return nil
+			}
+			finders := []resolve.Finder{lang}
+			ix := resolve.NewRuleIndex(mrslv, finders)
 			for _, bf := range tc.index {
 				f, err := rule.LoadData(filepath.Join(bf.rel, "BUILD.bazel"), bf.rel, []byte(bf.content))
 				if err != nil {
@@ -424,7 +427,16 @@ proto_library(
 			}
 			ix.Finish()
 			for i, r := range f.Rules {
-				lang.Resolve(c, ix, rc, r, imports[i], label.New("", "test", r.Name()))
+				err := lang.Resolve(t.Context(), resolve.ResolveArgs{
+					Config:  c,
+					Index:   ix,
+					Rule:    r,
+					From:    label.New("", "test", r.Name()),
+					Imports: imports[i],
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			f.Sync()
 			got := strings.TrimSpace(string(bzl.Format(f.File)))
@@ -500,7 +512,12 @@ func TestCrossResolve(t *testing.T) {
 			pc := GetProtoConfig(c)
 			pc.Mode = tc.protoMode
 			ix := (*resolve.RuleIndex)(nil)
-			got := lang.(resolve.CrossResolver).CrossResolve(c, ix, tc.imp, tc.lang)
+			got := lang.Find(t.Context(), resolve.FindArgs{
+				Config: c,
+				Index:  ix,
+				Import: tc.imp,
+				Lang:   tc.lang,
+			})
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("got %#v ; want %#v", got, tc.want)
 			}
@@ -515,10 +532,4 @@ func convertImportsAttr(r *rule.Rule) interface{} {
 	}
 	r.DelAttr("_imports")
 	return value
-}
-
-type mapResolver map[string]resolve.Resolver
-
-func (mr mapResolver) Resolver(r *rule.Rule, f string) resolve.Resolver {
-	return mr[r.Kind()]
 }

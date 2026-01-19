@@ -28,7 +28,7 @@ _GAZELLE_BINARY_CONFIGS = [
     [
         "gazelle_with_proto_and_go_languages",
         [
-            "//language/proto:go_default_library",
+            "//v2/language/proto",
             "//language/go:go_default_library",
         ],
     ],

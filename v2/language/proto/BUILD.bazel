@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//language/proto/gen:def.bzl", "known_imports")
+load("//v2/language/proto/gen:def.bzl", "known_imports")
 
 # gazelle:exclude testdata
 
@@ -39,7 +39,6 @@ go_library(
         "config.go",
         "constants.go",
         "fileinfo.go",
-        "fix.go",
         "generate.go",
         "kinds.go",
         "known_go_imports.go",
@@ -49,16 +48,16 @@ go_library(
         "package.go",
         "resolve.go",
     ],
-    importpath = "github.com/bazelbuild/bazel-gazelle/language/proto",
+    importpath = "github.com/bazel-contrib/bazel-gazelle/v2/language/proto",
     visibility = ["//visibility:public"],
     deps = [
-        "//config",
-        "//language",
-        "//repo",
-        "//resolve",
+        "//v2/compat",
+        "//v2/config",
         "//v2/label",
+        "//v2/language",
         "//v2/merger",
         "//v2/pathtools",
+        "//v2/resolve",
         "//v2/rule",
     ],
 )
@@ -78,14 +77,13 @@ go_test(
     ),
     embed = [":proto"],
     deps = [
-        "//config",
-        "//language",
-        "//repo",
         "//resolve",
         "//v2/compat",
         "//v2/config",
         "//v2/label",
+        "//v2/language",
         "//v2/merger",
+        "//v2/resolve",
         "//v2/rule",
         "//v2/testtools",
         "//v2/walk",
@@ -105,7 +103,6 @@ filegroup(
         "constants.go",
         "fileinfo.go",
         "fileinfo_test.go",
-        "fix.go",
         "generate.go",
         "generate_test.go",
         "kinds.go",
@@ -118,13 +115,7 @@ filegroup(
         "reference.md",
         "resolve.go",
         "resolve_test.go",
-        "//language/proto/gen:all_files",
+        "//v2/language/proto/gen:all_files",
     ],
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "go_default_library",
-    actual = ":proto",
     visibility = ["//visibility:public"],
 )

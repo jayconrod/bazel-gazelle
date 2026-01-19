@@ -23,8 +23,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	bzl "github.com/bazelbuild/buildtools/build"
 	"io"
 	"os"
 	"os/exec"
@@ -32,6 +30,9 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
+	bzl "github.com/bazelbuild/buildtools/build"
 )
 
 func main() {
@@ -204,9 +205,9 @@ This utility is intended to handle many of the steps to release a new version.
 
 	cmd = exec.CommandContext(ctx, "bazel", "build",
 		"//language/go:std_package_list",
-		"//language/proto:known_go_imports",
-		"//language/proto:known_imports",
-		"//language/proto:known_proto_imports",
+		"//v2/language/proto:known_go_imports",
+		"//v2/language/proto:known_imports",
+		"//v2/language/proto:known_proto_imports",
 	)
 	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -216,9 +217,9 @@ This utility is intended to handle many of the steps to release a new version.
 
 	generatedFiles := []string{
 		"language/go/std_package_list.go",
-		"language/proto/known_go_imports.go",
-		"language/proto/known_imports.go",
-		"language/proto/known_proto_imports.go",
+		"v2/language/proto/known_go_imports.go",
+		"v2/language/proto/known_imports.go",
+		"v2/language/proto/known_proto_imports.go",
 	}
 	for _, f := range generatedFiles {
 		if err := updateFile(repoRoot, f); err != nil {

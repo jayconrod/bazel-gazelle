@@ -25,11 +25,11 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/compat"
 	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazel-contrib/bazel-gazelle/v2/testtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/walk"
-	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
 
 	bzl "github.com/bazelbuild/buildtools/build"
@@ -59,7 +59,7 @@ func TestGenerateRules(t *testing.T) {
 			return
 		}
 		t.Run(rel, func(t *testing.T) {
-			res := lang.GenerateRules(language.GenerateArgs{
+			res, err := lang.Generate(t.Context(), language.GenerateArgs{
 				Config:       c,
 				Dir:          dir,
 				Rel:          rel,
@@ -68,6 +68,9 @@ func TestGenerateRules(t *testing.T) {
 				RegularFiles: regularFiles,
 				GenFiles:     genFiles,
 			})
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(res.Empty) > 0 {
 				t.Errorf("got %d empty rules; want 0", len(res.Empty))
 			}
@@ -76,7 +79,7 @@ func TestGenerateRules(t *testing.T) {
 				r.Insert(f)
 			}
 			convertImportsAttrs(f)
-			merger.FixLoads(f, lang.(language.ModuleAwareLanguage).ApparentLoads(func(string) string { return "" }))
+			merger.FixLoads(f, lang.ApparentLoads(func(string) string { return "" }))
 			f.Sync()
 			got := string(bzl.Format(f.File))
 			wantPath := filepath.Join(dir, "BUILD.want")
@@ -94,7 +97,7 @@ func TestGenerateRules(t *testing.T) {
 }
 
 func TestGenerateRulesEmpty(t *testing.T) {
-	lang := NewLanguage()
+	lang := compat.LanguageWithDefaults(NewLanguageV2())
 	c := config.New()
 	c.Exts[protoName] = &ProtoConfig{}
 
@@ -121,7 +124,7 @@ proto_library(
 		t.Fatal(err)
 	}
 	genFiles := []string{"bar.proto"}
-	res := lang.GenerateRules(language.GenerateArgs{
+	res, err := lang.Generate(t.Context(), language.GenerateArgs{
 		Config:   c,
 		Rel:      "foo",
 		File:     old,
@@ -152,15 +155,17 @@ func TestGeneratePackage(t *testing.T) {
 		}
 	}
 
-	lang := NewLanguage()
-	c, _, _ := testConfig(t, "testdata")
+	c, lang, _ := testConfig(t, "testdata")
 	dir := filepath.FromSlash("testdata/protos")
-	res := lang.GenerateRules(language.GenerateArgs{
+	res, err := lang.Generate(t.Context(), language.GenerateArgs{
 		Config:       c,
 		Dir:          dir,
 		Rel:          "protos",
 		RegularFiles: []string{"foo.proto"},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	r := res.Gen[0]
 	got := r.PrivateAttr(PackageKey).(Package)
 	want := Package{
@@ -203,19 +208,21 @@ func TestFileModeImports(t *testing.T) {
 		}
 	}
 
-	lang := NewLanguage()
-	c, _, _ := testConfig(t, "testdata")
+	c, lang, _ := testConfig(t, "testdata")
 	c.Exts[protoName] = &ProtoConfig{
 		Mode: FileMode,
 	}
 
 	dir := filepath.FromSlash("testdata/file_mode")
-	res := lang.GenerateRules(language.GenerateArgs{
+	res, err := lang.Generate(t.Context(), language.GenerateArgs{
 		Config:       c,
 		Dir:          dir,
 		Rel:          "file_mode",
 		RegularFiles: []string{"foo.proto", "bar.proto"},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(res.Gen) != 2 {
 		t.Error("expected 2 generated packages")
@@ -309,7 +316,7 @@ proto_library(
 
 	c, lang, _ := testConfig(t, "testdata")
 
-	res := lang.GenerateRules(language.GenerateArgs{
+	res, err := lang.Generate(t.Context(), language.GenerateArgs{
 		Config:       c,
 		Dir:          filepath.FromSlash("testdata/protos"),
 		File:         old,
@@ -318,6 +325,9 @@ proto_library(
 		GenFiles:     []string{"gen.proto", "gen_not_consumed.proto"},
 		OtherGen:     []*rule.Rule{genRule1, genRule2},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Make sure that "gen.proto" is not added to existing foo_proto rule
 	// because it is consumed by existing_gen_proto proto_library.
@@ -432,8 +442,8 @@ func TestRuleName(t *testing.T) {
 	}
 }
 
-func testConfig(t *testing.T, repoRoot string) (*config.Config, language.Language, []config.Configurer) {
-	lang := NewLanguage()
+func testConfig(t *testing.T, repoRoot string) (*config.Config, *protoLang, []config.Configurer) {
+	lang := &protoLang{}
 	cexts := []config.Configurer{
 		&config.CommonConfigurer{},
 		compat.MustConfigurerV2(&walk.Configurer{}),

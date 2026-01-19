@@ -18,11 +18,13 @@ package proto
 import (
 	"fmt"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 )
 
 var protoKinds = map[string]rule.KindInfo{
 	"proto_library": {
+		LoadedFrom:    label.New("rules_proto", "proto", "defs.bzl"),
 		MatchAttrs:    []string{"srcs"},
 		NonEmptyAttrs: map[string]bool{"srcs": true},
 		MergeableAttrs: map[string]bool{

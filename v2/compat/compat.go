@@ -260,6 +260,9 @@ func LanguageWithDefaults(v language.Language) CompleteLanguage {
 		adapter.Generator = noopGenerator{}
 	}
 	adapter.ApparentLoader = noopLoader{}
+	if loader, ok := v.(ApparentLoader); ok {
+		adapter.ApparentLoader = loader
+	}
 	if fix, ok := v.(language.Fixer); ok {
 		adapter.Fixer = fix
 	} else {

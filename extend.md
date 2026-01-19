@@ -38,9 +38,9 @@ Example
 Gazelle itself is built using the model described above, so it may serve as
 an example.
 
-[//language/proto:go_default_library] and [//language/go:go_default_library]
+[//v2/language/proto] and [//language/go]
 both implement the [Language]
-interface. There is also [//internal/gazellebinarytest:go_default_library],
+interface. There is also [//internal/gazellebinarytest],
 a stub implementation used for testing.
 
 `//cmd/gazelle` is a `gazelle_binary` rule that includes both of these
@@ -154,10 +154,10 @@ includes the proto package name, as well as source names, imports, and options.
 [Language]: https://godoc.org/github.com/bazelbuild/bazel-gazelle/language#Language
 [//internal/gazellebinarytest:go_default_library]: https://github.com/bazelbuild/bazel-gazelle/tree/master/internal/gazellebinarytest
 [//language/go:go_default_library]: https://github.com/bazelbuild/bazel-gazelle/tree/master/language/go
-[//language/proto:go_default_library]: https://github.com/bazelbuild/bazel-gazelle/tree/master/language/proto
+[//v2/language/proto:go_default_library]: https://github.com/bazel-contrib/bazel-gazelle/tree/master/v2/language/proto
 [gazelle]: https://github.com/bazelbuild/bazel-gazelle#bazel-rule
 [go_binary]: https://github.com/bazelbuild/rules_go/blob/master/go/core.rst#go-binary
 [go_library]: https://github.com/bazelbuild/rules_go/blob/master/go/core.rst#go-library
-[proto godoc]: https://godoc.org/github.com/bazelbuild/bazel-gazelle/language/proto
-[proto.GetProtoConfig]: https://godoc.org/github.com/bazelbuild/bazel-gazelle/language/proto#GetProtoConfig
-[proto.Package]: https://godoc.org/github.com/bazelbuild/bazel-gazelle/language/proto#Package
+[proto godoc]: https://pkg.go.dev/github.com/bazel-contrib/bazel-gazelle/v2/language/proto
+[proto.GetProtoConfig]: https://pkg.go.dev/github.com/bazel-contrib/bazel-gazelle/v2/language/proto#GetProtoConfig
+[proto.Package]: https://pkg.go.dev/github.com/bazel-contrib/bazel-gazelle/v2/language/proto#Package

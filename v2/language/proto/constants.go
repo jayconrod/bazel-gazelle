@@ -21,6 +21,12 @@ const (
 	// describes the library and its sources.
 	PackageKey = "_package"
 
+	// ImportsKey is the name of a private attribute of type []string set on
+	// generated proto_library rules, containing a list of imported .proto
+	// file paths. This attribute may be accessed and used by other extensions
+	// to resolve their own dependencies.
+	ImportsKey = "_gazelle_imports"
+
 	// wellKnownTypesGoPrefix is the import path for the Go repository containing
 	// pre-generated code for the Well Known Types.
 	wellKnownTypesGoPrefix = "github.com/golang/protobuf"

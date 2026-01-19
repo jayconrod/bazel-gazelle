@@ -16,6 +16,7 @@ limitations under the License.
 package proto
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -23,15 +24,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
 )
 
-func (*protoLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolve.ImportSpec {
+func (*protoLang) Imports(ctx context.Context, args resolve.ImportsArgs) (resolve.ImportsResult, error) {
+	f := args.File
+	r := args.Rule
 	rel := f.Pkg
 	srcs := r.AttrStrings("srcs")
 	imports := make([]resolve.ImportSpec, 0, len(srcs))
@@ -46,23 +48,26 @@ func (*protoLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolv
 		}
 		imports = append(imports, resolve.ImportSpec{Lang: "proto", Imp: transformedImport})
 	}
-	return imports
+	return resolve.ImportsResult{Imports: imports}, nil
 }
 
 func (*protoLang) Embeds(r *rule.Rule, from label.Label) []label.Label {
 	return nil
 }
 
-func (*protoLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, importsRaw interface{}, from label.Label) {
-	if importsRaw == nil {
+func (*protoLang) Resolve(ctx context.Context, args resolve.ResolveArgs) error {
+	if args.Imports == nil {
 		// may not be set in tests.
-		return
+		return nil
 	}
-	imports := importsRaw.([]string)
+	imports := args.Imports.([]string)
+	r := args.Rule
+	from := args.From
+
 	r.DelAttr("deps")
 	depSet := make(map[string]bool)
 	for _, imp := range imports {
-		l, err := resolveProto(c, ix, r, imp, from)
+		l, err := resolveProto(args.Config, args.Index, r, imp, from)
 		if err == errSkipImport {
 			continue
 		} else if err != nil {
@@ -80,6 +85,7 @@ func (*protoLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Remo
 		sort.Strings(deps)
 		r.SetAttr("deps", deps)
 	}
+	return nil
 }
 
 var (
@@ -144,12 +150,12 @@ func resolveWithIndex(c *config.Config, ix *resolve.RuleIndex, imp string, from 
 	return matches[0].Label, nil
 }
 
-// CrossResolve provides dependency resolution logic for the go language extension.
-func (*protoLang) CrossResolve(c *config.Config, ix *resolve.RuleIndex, imp resolve.ImportSpec, lang string) []resolve.FindResult {
-	if lang != "go" {
+func (*protoLang) Find(ctx context.Context, args resolve.FindArgs) []resolve.FindResult {
+	if args.Lang != "go" {
 		return nil
 	}
-	pc := GetProtoConfig(c)
+	pc := GetProtoConfig(args.Config)
+	imp := args.Import
 	if imp.Lang == "proto" && pc.Mode.ShouldUseKnownImports() {
 		if l, ok := knownProtoImports[imp.Imp]; ok {
 			return []resolve.FindResult{{Label: l}}

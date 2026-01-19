@@ -16,26 +16,26 @@ limitations under the License.
 package proto
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"path"
 	"sort"
 	"strings"
 
+	"github.com/bazel-contrib/bazel-gazelle/v2/language"
 	"github.com/bazel-contrib/bazel-gazelle/v2/merger"
 	"github.com/bazel-contrib/bazel-gazelle/v2/pathtools"
 	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
-	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/language"
 )
 
-func (*protoLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
+func (*protoLang) Generate(ctx context.Context, args language.GenerateArgs) (language.GenerateResult, error) {
 	c := args.Config
 	pc := GetProtoConfig(c)
 	if !pc.Mode.ShouldGenerateRules() {
 		// Don't create or delete proto rules in this mode. Any existing rules
 		// are likely hand-written.
-		return language.GenerateResult{}
+		return language.GenerateResult{}, nil
 	}
 
 	var regularProtoFiles []string
@@ -94,11 +94,11 @@ func (*protoLang) GenerateRules(args language.GenerateArgs) language.GenerateRes
 	})
 	res.Imports = make([]interface{}, len(res.Gen))
 	for i, r := range res.Gen {
-		res.Imports[i] = r.PrivateAttr(config.GazelleImportsKey)
+		res.Imports[i] = r.PrivateAttr(ImportsKey)
 	}
 	res.Empty = append(res.Empty, generateEmpty(args.File, regularProtoFiles, genProtoFiles)...)
 	res.RelsToIndex = buildRelsToIndex(pc, pkgs)
-	return res
+	return res, nil
 }
 
 // RuleName returns a name for a proto_library derived from the given strings.
@@ -272,7 +272,7 @@ func generateProto(pc *ProtoConfig, rel string, pkg *Package, shouldSetVisibilit
 	sort.Strings(imports)
 	// NOTE: This attribute should not be used outside this extension. It's still
 	// convenient for testing though.
-	r.SetPrivateAttr(config.GazelleImportsKey, imports)
+	r.SetPrivateAttr(ImportsKey, imports)
 	for k, v := range pkg.Options {
 		r.SetPrivateAttr(k, v)
 	}
